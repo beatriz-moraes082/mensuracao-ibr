@@ -933,10 +933,14 @@ function renderDiagnostico(c) {
     if (l.venda) { e.v++; e.r += l.price || 0; }
     porCloser.set(n, e);
   });
+  const totC = [...porCloser.values()].reduce(
+    (t, v) => ({ n: t.n + v.n, p: t.p + v.p, v: t.v + v.v, r: t.r + v.r }),
+    { n: 0, p: 0, v: 0, r: 0 });
   table($('#diag-closer'),
     [{ t: 'Closer' }, { t: 'Cards', num: 1 }, { t: 'Propostas', num: 1 }, { t: 'Vendas', num: 1 }, { t: 'Conv.', num: 1 }, { t: 'Receita', num: 1 }],
     [...porCloser.entries()].sort((a, b) => b[1].r - a[1].r).map(([n, v]) =>
-      [who(n), int(v.n), int(v.p), `<b>${int(v.v)}</b>`, pctS(v.v, v.n), kbrl(v.r)]));
+      [who(n), int(v.n), int(v.p), `<b>${int(v.v)}</b>`, pctS(v.v, v.n), kbrl(v.r)]),
+    ['Total', int(totC.n), int(totC.p), int(totC.v), pctS(totC.v, totC.n), kbrl(totC.r)]);
   $('#diag-closer-sub').textContent = `${porCloser.size} closers com card no período`;
 
   renderMonthly();
