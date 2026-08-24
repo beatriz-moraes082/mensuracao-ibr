@@ -962,7 +962,12 @@ function renderMonthly() {
   if (M && M.adset) for (const byDay of Object.values(M.adset))
     for (const [ds, v] of Object.entries(byDay)) touch(ds.slice(0, 7)).inv += v;
 
-  const rows = [...meses.entries()].filter(([m, e]) => e.leads + e.v + e.inv > 0).sort();
+  // Junho fica fora: o apagão de rastreio de 17/06 a 10/07 deixou os leads sem
+  // UTM, então o CPL do mês mede o rastreio que sobrou, não a mídia. Os leads
+  // continuam no dash — só não entram nesta comparação.
+  const OCULTOS = new Set(['2026-06']);
+  const rows = [...meses.entries()]
+    .filter(([m, e]) => e.leads + e.v + e.inv > 0 && !OCULTOS.has(m)).sort();
   table($('#diag-monthly'),
     [{ t: 'Mês' }, { t: 'Leads', num: 1 }, { t: 'Invest. Meta', num: 1 }, { t: 'CPL Meta', num: 1 },
      { t: 'Qualif.', num: 1 }, { t: 'Taxa', num: 1 }, { t: 'Reuniões', num: 1 }, { t: 'Propostas', num: 1 },
@@ -1019,8 +1024,7 @@ function renderEvolucao(c) {
   const melhorTx  = wk.filter(k => k.leads >= 20).sort((a, b) => pct(b.q, b.leads) - pct(a.q, a.leads))[0];
 
   $('#evol-kpis').innerHTML = [
-    kpi('Semanas no período', int(wk.length), c.w.label, 'ink'),
-    kpi('Média de leads/semana', int(wk.reduce((s, k) => s + k.leads, 0) / Math.max(wk.length, 1)), semanaTop ? `pico de ${int(semanaTop.leads)} na semana de ${semanaTop.label}` : ''),
+    kpi('Média de leads/semana', int(wk.reduce((s, k) => s + k.leads, 0) / Math.max(wk.length, 1)), semanaTop ? `pico de ${int(semanaTop.leads)} na semana de ${semanaTop.label}` : '', 'ink'),
     kpi('Melhor taxa de qualificação', melhorTx ? pctS(melhorTx.q, melhorTx.leads) : '—', melhorTx ? `semana de ${melhorTx.label}` : '', 'accent'),
     kpi('Investimento Meta no período', kbrl(c.invest), `CPL Meta ${c.cplMeta ? brl(c.cplMeta) : '—'}`),
     kpi('Vendas no período', int(c.vendas), `${kbrl(c.receita)} de receita`)
