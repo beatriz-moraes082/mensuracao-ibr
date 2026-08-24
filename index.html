@@ -1199,11 +1199,14 @@ function renderPerfil(c) {
       .sort((a, b) => b.n - a.n);
   };
   const cols = [{ t: '' }, { t: 'Leads', num: 1 }, { t: 'Qualif.', num: 1 }, { t: 'Taxa', num: 1 },
-                { t: 'Invest.', num: 1 }, { t: 'CPL', num: 1 }, { t: 'CPL qualif.', num: 1 }];
+                { t: 'Vendas', num: 1 }, { t: 'Invest.', num: 1 }, { t: 'CPL', num: 1 },
+                { t: 'CPL qualif.', num: 1 }, { t: 'CAC', num: 1 }];
   const fill = rows => rows.map(r => [
     `<b>${esc(r.k)}</b>`, int(r.n), int(r.q), pctS(r.q, r.n),
+    r.v ? `<b>${int(r.v)}</b>` : '0',
     r.spend ? kbrl(r.spend) : '—', r.spend ? brl(r.spend / r.n) : '—',
-    r.spend && r.q ? `<b>${brl(r.spend / r.q)}</b>` : '—'
+    r.spend && r.q ? `<b>${brl(r.spend / r.q)}</b>` : '—',
+    r.spend && r.v ? brl(r.spend / r.v) : '—'
   ]);
   table($('#perfil-aud'), cols, fill(byKey('audience', M && M.adset)));
   table($('#perfil-cri'), cols, fill(byKey('creative', M && M.creative)));
@@ -1319,7 +1322,7 @@ function renderFunis(c) {
     { k: 'Entradas no funil', n: c.leads, hint: 'negócios criados no SDR' },
     { k: 'Lead qualificado', n: c.qualif, hint: 'etapa de qualificação ou além' },
     { k: 'Reunião agendada', n: c.agend },
-    { k: 'Reunião realizada', n: c.realiz, win: 1, hint: 'status 142 do SDR — não é venda' }
+    { k: 'Reunião realizada', n: c.realiz, win: 1, hint: 'status 142 do SDR' }
   ]);
   ratesBox($('#rates-sdr'), [
     ['qualificação', c.txQualif.toFixed(0) + '%'],
