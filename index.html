@@ -388,7 +388,7 @@ tfoot td{border-top:1px solid var(--line);font-weight:700;color:var(--ink);backg
     <div class="sec" style="padding-top:34px">
       <div class="sec-head"><span class="sec-ix">05</span><div>
         <h2>Atividade do time</h2>
-        <p>Tarefas registradas no Kommo e tempo até o primeiro contato humano com o lead.</p>
+        <p>Tarefas registradas no Kommo e perfil de execução de cada consultor.</p>
       </div></div>
       <div class="filterbar" data-period="ativ"></div>
       <div class="kpis" id="ativ-kpis" style="margin-top:16px"></div>
@@ -1402,42 +1402,26 @@ const mediana = arr => {
   const s = arr.slice().sort((a, b) => a - b), m = s.length >> 1;
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 };
-const dur = min => min < 60 ? `${Math.round(min)} min`
-  : min < 1440 ? `${(min / 60).toFixed(1).replace('.', ',')} h`
-  : `${(min / 1440).toFixed(1).replace('.', ',')} dias`;
-
 function renderAtividades(c) {
   const uname = id => (K.users_map[String(id)] || {}).name || 'sem atribuição';
   const tasks = (K.tasks || []).filter(t => inWin(t.created_at, c.w));
   const done  = tasks.filter(t => t.is_completed);
 
-  /* tempo até o 1º contato humano, por lead do período */
-  const ft = K.first_touch || {};
-  const tempos = [];
-  c.sdr.forEach(l => {
-    const t = ft[String(l.id)];
-    if (t && t[0] > l.created_at) tempos.push({ min: (t[0] - l.created_at) / 60, uid: t[1], lead: l });
-  });
-  const med = mediana(tempos.map(t => t.min));
-
   $('#ativ-kpis').innerHTML = [
     kpi('Tarefas criadas', int(tasks.length), c.w.label, 'ink'),
     kpi('Concluídas', int(done.length), `${pctS(done.length, tasks.length)} de conclusão`, 'accent'),
-    kpi('Tarefas por dia', (tasks.length / daysOf(c.w)).toFixed(1).replace('.', ','), `${daysOf(c.w)} dias no período`),
-    kpi('Leads com contato humano', int(tempos.length), `${pctS(tempos.length, c.leads)} dos leads do período`),
-    kpi('Mediana até o 1º contato', tempos.length ? dur(med) : '—', 'mensagem enviada por pessoa, não pelo bot')
+    kpi('Tarefas por dia', (tasks.length / daysOf(c.w)).toFixed(1).replace('.', ','), `${daysOf(c.w)} dias no período`)
   ].join('');
 
   /* por consultor */
   const porUser = new Map();
-  const touch = n => { if (!porUser.has(n)) porUser.set(n, { t: 0, d: 0, leads: 0, tempos: [] }); return porUser.get(n); };
+  const touch = n => { if (!porUser.has(n)) porUser.set(n, { t: 0, d: 0, leads: 0 }); return porUser.get(n); };
   // Tudo aqui é atribuído pelo usuário responsável do Kommo — inclusive os
   // cards do Closer. O campo "Closer" do lead usa outra grafia para as mesmas
   // pessoas e criaria linhas duplicadas nesta tabela.
   tasks.forEach(t => { const e = touch(uname(t.responsible)); e.t++; if (t.is_completed) e.d++; });
   c.sdr.forEach(l => touch(uname(l.responsible_user_id)).leads++);
   c.clo.forEach(l => touch(uname(l.responsible_user_id)).leads++);
-  tempos.forEach(t => touch(uname(t.uid)).tempos.push(t.min));
 
   table($('#ativ-users'),
     [{ t: 'Consultor' }, { t: 'Tarefas', num: 1 }, { t: 'Concluídas', num: 1 }, { t: '% conclusão', num: 1 },
@@ -1563,10 +1547,8 @@ function renderPerfis(c, tasks, uname) {
   const porSdr = new Map();
   c.sdr.forEach(l => {
     const n = uname(l.responsible_user_id);
-    const e = porSdr.get(n) || { leads: 0, q: 0, contato: [] };
+    const e = porSdr.get(n) || { leads: 0, q: 0 };
     e.leads++; if (l.qualified) e.q++;
-    const ft = (K.first_touch || {})[String(l.id)];
-    if (ft && ft[0] > l.created_at) e.contato.push((ft[0] - l.created_at) / 60);
     porSdr.set(n, e);
   });
 
@@ -1575,11 +1557,9 @@ function renderPerfis(c, tasks, uname) {
     .map(([nome, v]) => {
       const s = st.get(nome);
       return {
-        nome, leads: v.leads, q: v.q, s,
-        ritmo: med(s.dur), contato: med(v.contato),
+        nome, leads: v.leads, q: v.q, s, ritmo: med(s.dur),
         meta: `${int(s.d)}/${int(s.t)} tarefas concluídas · ${int(v.leads)} leads`
           + (s.dur.length ? ` · ritmo ${med(s.dur).toFixed(1).replace('.', ',')}d` : '')
-          + (v.contato.length ? ` · 1º contato ${dur(med(v.contato))}` : '')
       };
     }).sort((a, b) => b.leads - a.leads);
 
@@ -1589,8 +1569,7 @@ function renderPerfis(c, tasks, uname) {
     { k: 'Consistência', bruto: p => p.s.t ? p.s.d / p.s.t : 0 },
     { k: 'Prazo',       bruto: p => p.s.prazoN ? p.s.prazoOk / p.s.prazoN : 0 },
     { k: 'Follow-up',   bruto: p => p.s.fu ? p.s.fud / p.s.fu : 0 },
-    { k: 'Conversão',   bruto: p => p.leads ? p.q / p.leads : 0 },
-    { k: '1º contato',  bruto: p => p.contato, menorMelhor: 1 }
+    { k: 'Conversão',   bruto: p => p.leads ? p.q / p.leads : 0 }
   ], 'rad-sdr');
   $('#perf-sdr-sub').textContent =
     `${sdrs.length} SDRs com 20+ leads no período · cada eixo é relativo ao melhor do time`;

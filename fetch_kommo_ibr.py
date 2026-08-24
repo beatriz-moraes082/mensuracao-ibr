@@ -268,46 +268,6 @@ def fetch_tasks():
     return tasks
 
 
-# Canais de saída que contam como "contato humano" com o lead.
-_CANAIS_SAIDA = ["outgoing_chat_message", "entity_direct_message", "outgoing_mail"]
-
-
-def fetch_first_human_touch():
-    """Primeiro contato HUMANO por lead — base do 'tempo de atendimento' do SDR.
-
-    O filtro `created_by != 0` é o ponto central: boa parte das mensagens é do bot
-    de pré-atendimento, que responde na hora. Sem esse corte a métrica mediria o
-    bot, não o consultor.
-    """
-    ts_from, ts_to = _period_ts()
-    touch = {}
-    for tipo in _CANAIS_SAIDA:
-        page, vistos = 1, 0
-        while True:
-            data = kommo_get("/api/v4/events", params={
-                "limit": 250, "page": page,
-                "filter[created_at][from]": ts_from,
-                "filter[created_at][to]":   ts_to,
-                "filter[type][0]":          tipo,
-            })
-            batch = data.get("_embedded", {}).get("events", []) if data else []
-            if not batch: break
-            vistos += len(batch)
-            for e in batch:
-                if e.get("entity_type") != "lead": continue
-                autor = e.get("created_by") or 0
-                if autor == 0: continue          # bot / automação
-                lid, ts = e.get("entity_id"), e.get("created_at")
-                if not lid or not ts: continue
-                if lid not in touch or ts < touch[lid][0]:
-                    touch[lid] = (ts, autor)
-            if len(batch) < 250: break
-            page += 1
-        print(f"    {tipo}: {vistos} eventos varridos")
-    print(f"    → {len(touch)} leads com contato humano identificado")
-    return {str(lid): [ts, uid] for lid, (ts, uid) in touch.items()}
-
-
 def get_pipeline_statuses():
     status_map = {}
     for pid in [PIPELINE_SDR, PIPELINE_CLOSER, PIPELINE_NUTRICAO,
@@ -561,9 +521,6 @@ def main():
     tasks = fetch_tasks()
     print(f"  {len(tasks)} tarefas")
 
-    print("\n💬 1º contato humano por lead (eventos de saída)...")
-    first_touch = fetch_first_human_touch()
-
     print("\n📋 Leads SDR...")
     leads_sdr = get_leads(PIPELINE_SDR);            print(f"  {len(leads_sdr)}")
     print("📋 Leads Closer (criados)...")
@@ -676,7 +633,6 @@ def main():
         "users_map":   {str(k): v for k, v in users_map.items()},
         "task_types":  {str(k): v for k, v in task_types.items()},
         "tasks":       tasks,
-        "first_touch": first_touch,
         "metrics":     metrics,
         "sdr":         [slim(l) for l in deduped_sdr],
         "closer":      [slim(l) for l in processed_closer],
