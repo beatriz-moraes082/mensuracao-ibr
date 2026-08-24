@@ -88,6 +88,57 @@ CHECAGENS = {
 }
 
 
+def grava_env(chave, valor):
+    """Reescreve só essa chave, preservando o resto do arquivo."""
+    import re
+    txt = ENV.read_text()
+    txt, n = re.subn(rf"(?m)^{re.escape(chave)}=.*$", lambda m: f"{chave}={valor}", txt)
+    if n == 0:
+        txt = txt.rstrip("\n") + f"\n{chave}={valor}\n"
+    ENV.write_text(txt)
+    return n
+
+
+def modo_novo(chave):
+    """Pede um valor novo, valida, e só então grava no .env e envia ao GitHub.
+
+    Num passo só: separado em dois, é fácil achar que gravou quando não gravou.
+    """
+    import getpass
+
+    env = le_env()
+    print(f"\n  Novo valor para {chave}")
+    print("  A digitação não aparece na tela. Cole e tecle Enter.\n")
+    valor = getpass.getpass(f"  {chave}: ").strip()
+    if not valor:
+        raise SystemExit("  Nada recebido — nada foi alterado.")
+    print(f"\n  Recebi {len(valor)} caracteres.")
+
+    anterior = env.get(chave, "").strip()
+    if valor == anterior:
+        raise SystemExit("  É idêntico ao que já está no .env — nada foi alterado.\n"
+                         "  Confira se o Kommo gerou uma chave nova em vez de reexibir a antiga.")
+
+    fn = CHECAGENS.get(chave)
+    if fn:
+        ok, detalhe = fn({**env, chave: valor})
+        if not ok:
+            raise SystemExit(f"  Recusado: {detalhe}\n"
+                             f"  Nada foi gravado nem enviado.")
+        print(f"  Validado: {detalhe}")
+
+    grava_env(chave, valor)
+    print("  Gravado no .env.")
+
+    sucesso, err = envia(chave, valor)
+    if not sucesso:
+        raise SystemExit(f"  Gravado localmente, mas o envio ao GitHub falhou: {err[:120]}")
+    print("  Enviado ao GitHub.\n")
+
+    subprocess.run(["gh", "secret", "list", "--repo", REPO])
+    return 0
+
+
 def envia(chave, valor):
     p = subprocess.run(["gh", "secret", "set", chave, "--repo", REPO],
                        input=valor, text=True, capture_output=True)
@@ -95,8 +146,15 @@ def envia(chave, valor):
 
 
 def main():
-    args = [a for a in sys.argv[1:] if a != "--force"]
-    force = "--force" in sys.argv[1:]
+    argv = sys.argv[1:]
+    if "--novo" in argv:
+        i = argv.index("--novo")
+        if i + 1 >= len(argv):
+            raise SystemExit("uso: python3 sobe_secrets.py --novo KOMMO_TOKEN")
+        return modo_novo(argv[i + 1])
+
+    args = [a for a in argv if a != "--force"]
+    force = "--force" in argv
     env = le_env()
     chaves = args or CHAVES_PADRAO
 
