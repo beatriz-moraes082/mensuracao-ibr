@@ -249,11 +249,18 @@ def fetch_tasks():
             if t.get("entity_type") != "leads": continue
             # Só os campos que a aba de Atividades usa — são 13 mil tarefas, e
             # cada campo extra vira ~200 KB no JSON que o navegador baixa.
+            # complete_till e updated_at entram porque sustentam "prazo" e
+            # "ritmo" no perfil comportamental: sem eles não dá para saber se a
+            # tarefa venceu nem quanto tempo levou para ser concluída.
             tasks.append({
                 "responsible":  t.get("responsible_user_id"),
                 "task_type_id": t.get("task_type_id"),
                 "created_at":   t.get("created_at"),
                 "is_completed": bool(t.get("is_completed")),
+                "due":          t.get("complete_till"),
+                # Aproximação de "quando concluiu": o Kommo não expõe a data de
+                # conclusão, e updated_at de tarefa concluída é a última mexida.
+                "updated_at":   t.get("updated_at"),
             })
         print(f"    tasks pg{page}: +{len(batch)} (total {len(tasks)})")
         if len(batch) < 250: break
