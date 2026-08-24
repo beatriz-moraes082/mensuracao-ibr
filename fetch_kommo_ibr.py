@@ -225,7 +225,9 @@ def get_users_map():
         batch = data.get("_embedded", {}).get("users", []) if data else []
         if not batch: break
         for u in batch:
-            users[u["id"]] = {"name": u.get("name", ""), "email": u.get("email", "")}
+            # Só o nome: o dash usa apenas isso, e o JSON é publicado em
+            # repositório público — não há por que expor o e-mail do time.
+            users[u["id"]] = {"name": u.get("name", "")}
         if len(batch) < 250: break
         page += 1
     return users

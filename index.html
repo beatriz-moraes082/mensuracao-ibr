@@ -497,7 +497,6 @@ const META_LEADS_MES = 1500;
 const nf  = new Intl.NumberFormat('pt-BR');
 const int = v => nf.format(Math.round(v || 0));
 const brl = v => 'R$ ' + nf.format(Math.round(v || 0));
-const brl1 = v => 'R$ ' + (v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const pct = (a, b) => (b > 0 ? (100 * a / b) : 0);
 const pctS = (a, b, d = 0) => (b > 0 ? (100 * a / b).toFixed(d).replace('.', ',') + '%' : '—');
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
