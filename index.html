@@ -169,6 +169,20 @@ tfoot td{border-top:1px solid var(--line);font-weight:700;color:var(--ink);backg
 .tag.score-D{background:color-mix(in srgb,var(--mut) 30%,transparent);color:var(--ink2)}
 .tag.score-E{background:color-mix(in srgb,var(--mut) 18%,transparent);color:var(--mut)}
 
+/* ── perfil comportamental (radar) ──────────────────── */
+.radars{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(270px,1fr))}
+.rcard{border:1px solid var(--line);border-radius:var(--r-sm);padding:16px;background:var(--surface)}
+.rhead{display:flex;align-items:center;gap:10px;margin-bottom:4px}
+.rhead .nome{font-weight:700;font-size:14px;letter-spacing:-.01em}
+.rmeta{font-family:var(--f-mono);font-size:10.5px;color:var(--mut);line-height:1.6;margin-bottom:8px}
+.rbox{position:relative;height:210px}
+.rfoot{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px;padding-top:11px;border-top:1px solid var(--line2)}
+.rfoot .lab{font-family:var(--f-mono);font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;display:block;margin-bottom:5px}
+.rfoot .up .lab{color:var(--good)}.rfoot .dn .lab{color:var(--bad)}
+.rfoot li{list-style:none;font-size:12px;color:var(--ink2);line-height:1.65}
+.rfoot li b{color:var(--ink);font-weight:600}
+.rfoot li i{font-style:normal;color:var(--mut);font-family:var(--f-mono);font-size:10.5px}
+
 /* ── avisos ─────────────────────────────────────────── */
 .warn{display:flex;gap:11px;align-items:flex-start;padding:14px 16px;border:1px solid color-mix(in srgb,var(--accent) 22%,var(--line));border-left:3px solid var(--accent);
  border-radius:var(--r-xs);background:var(--tint);font-size:12.5px;color:var(--ink2);margin-top:16px;line-height:1.55}
@@ -381,6 +395,10 @@ tfoot td{border-top:1px solid var(--line);font-weight:700;color:var(--ink);backg
       <div class="grid" style="margin-top:14px">
         <div class="card span12"><div class="ch"><div><h3>Atividades por consultor</h3><div class="sub" id="ativ-sub">Tarefas criadas, concluídas e leads sob responsabilidade</div></div></div>
           <div class="tblwrap" style="border:none;box-shadow:none"><table id="ativ-users"></table></div></div>
+        <div class="card span12"><div class="ch"><div><h3>Perfil comportamental dos SDRs</h3><div class="sub" id="perf-sdr-sub">Cada eixo é a nota da pessoa em relação ao melhor do time no período</div></div><span class="cap">100 = melhor do time</span></div>
+          <div class="radars" id="perf-sdr"></div></div>
+        <div class="card span12"><div class="ch"><div><h3>Perfil comportamental dos Closers</h3><div class="sub" id="perf-clo-sub">Mesma leitura, com fechamento no lugar de qualificação</div></div><span class="cap">100 = melhor do time</span></div>
+          <div class="radars" id="perf-clo"></div></div>
         <div class="card span12"><div class="ch"><div><h3>Mix por tipo de tarefa</h3><div class="sub">Distribuição no período</div></div></div>
           <div id="ativ-tipos"></div></div>
       </div>
@@ -1423,10 +1441,10 @@ function renderAtividades(c) {
 
   table($('#ativ-users'),
     [{ t: 'Consultor' }, { t: 'Tarefas', num: 1 }, { t: 'Concluídas', num: 1 }, { t: '% conclusão', num: 1 },
-     { t: 'Negócios sob responsa.', num: 1 }, { t: 'Mediana 1º contato', num: 1 }],
+     { t: 'Negócios sob responsa.', num: 1 }],
     [...porUser.entries()].filter(([, v]) => v.t || v.leads).sort((a, b) => b[1].t - a[1].t).map(([n, v]) =>
-      [who(n), int(v.t), int(v.d), `<b>${pctS(v.d, v.t)}</b>`, int(v.leads), v.tempos.length ? dur(mediana(v.tempos)) : '—']),
-    [`Total`, int(tasks.length), int(done.length), pctS(done.length, tasks.length), int(c.leads + c.clo.length), tempos.length ? dur(med) : '—']);
+      [who(n), int(v.t), int(v.d), `<b>${pctS(v.d, v.t)}</b>`, int(v.leads)]),
+    [`Total`, int(tasks.length), int(done.length), pctS(done.length, tasks.length), int(c.leads + c.clo.length)]);
   $('#ativ-sub').textContent = `${porUser.size} pessoas com atividade ou negócio no período`;
 
   /* mix por tipo */
@@ -1438,6 +1456,175 @@ function renderAtividades(c) {
   $('#ativ-tipos').innerHTML = barlist(
     [...tipos.entries()].sort((a, b) => b[1] - a[1]).map(([k, v]) => ({ k, v, cls: 'lead', label: int(v), fat: pctS(v, tasks.length) })),
     { note: 'Os tipos "Dia 1", "Dia 3"… são as tarefas da cadência de follow-up configurada no Kommo.' });
+
+  renderPerfis(c, tasks, uname);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Perfil comportamental — radar por pessoa
+
+   Cada eixo é relativo ao melhor do time no período, não a uma meta absoluta:
+   100 é sempre alguém. Serve para comparar pessoas entre si e enxergar o
+   formato de cada uma; não diz se o time como um todo vai bem.
+   ═════════════════════════════════════════════════════════════════════════ */
+
+/** Tipos "Dia 1", "Dia 3"… — a cadência de follow-up configurada no Kommo. */
+const isFollowup = id => /^Dia /.test((K.task_types || {})[String(id)] || '');
+
+function statsPorPessoa(tasks, uname) {
+  const m = new Map();
+  const get = n => {
+    if (!m.has(n)) m.set(n, { t: 0, d: 0, fu: 0, fud: 0, prazoOk: 0, prazoN: 0, dur: [] });
+    return m.get(n);
+  };
+  tasks.forEach(t => {
+    const e = get(uname(t.responsible));
+    e.t++;
+    const fu = isFollowup(t.task_type_id);
+    if (fu) e.fu++;
+    if (t.is_completed) {
+      e.d++;
+      if (fu) e.fud++;
+      if (t.updated_at && t.created_at && t.updated_at >= t.created_at)
+        e.dur.push((t.updated_at - t.created_at) / 86400);
+      if (t.due) { e.prazoN++; if (t.updated_at && t.updated_at <= t.due) e.prazoOk++; }
+    }
+  });
+  return m;
+}
+
+/** Nota 0–100 relativa ao melhor do time. `menorMelhor` inverte (tempo). */
+function nota(valor, valores, menorMelhor) {
+  const vs = valores.filter(v => v != null && isFinite(v) && v > 0);
+  if (valor == null || !isFinite(valor) || !vs.length) return 0;
+  if (menorMelhor) {
+    const min = Math.min(...vs);
+    return valor > 0 ? Math.round(100 * min / valor) : 0;
+  }
+  const max = Math.max(...vs);
+  return max > 0 ? Math.round(100 * valor / max) : 0;
+}
+
+function cardsRadar(alvo, pessoas, eixos, prefixo) {
+  const el = $(alvo);
+  if (!pessoas.length) { el.innerHTML = '<div class="empty">sem atividade no período</div>'; return; }
+
+  // Eixo sem dado em ninguém sai da roda — melhor que desenhar um zero que
+  // parece desempenho ruim quando é ausência de coleta.
+  const vivos = eixos.filter(e => pessoas.some(p => e.bruto(p) != null && isFinite(e.bruto(p)) && e.bruto(p) > 0));
+
+  el.innerHTML = pessoas.map((p, i) => {
+    const notas = vivos.map(e => nota(e.bruto(p), pessoas.map(e.bruto), e.menorMelhor));
+    const ord = vivos.map((e, j) => ({ k: e.k, n: notas[j] })).sort((a, b) => b.n - a.n);
+    const li = x => `<li><b>${esc(x.k)}</b> <i>${x.n}</i></li>`;
+    return `<div class="rcard">
+      <div class="rhead"><span class="av" style="background:${avColor(p.nome)}">${esc(initials(p.nome))}</span>
+        <span class="nome">${esc(p.nome)}</span></div>
+      <div class="rmeta">${p.meta}</div>
+      <div class="rbox"><canvas id="${prefixo}-${i}"></canvas></div>
+      <div class="rfoot">
+        <div class="up"><span class="lab">Fortes</span><ul>${ord.slice(0, 2).map(li).join('')}</ul></div>
+        <div class="dn"><span class="lab">A melhorar</span><ul>${ord.slice(-2).reverse().map(li).join('')}</ul></div>
+      </div></div>`;
+  }).join('');
+
+  pessoas.forEach((p, i) => {
+    const notas = vivos.map(e => nota(e.bruto(p), pessoas.map(e.bruto), e.menorMelhor));
+    const cor = avColor(p.nome);
+    mkChart(`${prefixo}-${i}`, {
+      type: 'radar',
+      data: {
+        labels: vivos.map(e => e.k),
+        datasets: [{
+          label: p.nome, data: notas,
+          borderColor: cor, backgroundColor: cor + '28',   // hex + alpha (~16%)
+          borderWidth: 2, pointRadius: 3, pointBackgroundColor: cor
+        }]
+      },
+      options: {
+        plugins: { legend: { display: false } },
+        scales: { r: {
+          min: 0, max: 100,
+          angleLines: { color: css('--line') },
+          grid: { color: css('--line') },
+          pointLabels: { color: css('--ink2'), font: { family: 'Hanken Grotesk', size: 10.5, weight: '600' } },
+          ticks: { display: false, stepSize: 25 }
+        } }
+      }
+    });
+  });
+}
+
+function renderPerfis(c, tasks, uname) {
+  const st = statsPorPessoa(tasks, uname);
+  const med = a => a.length ? mediana(a) : null;
+
+  /* ── SDRs ── */
+  const porSdr = new Map();
+  c.sdr.forEach(l => {
+    const n = uname(l.responsible_user_id);
+    const e = porSdr.get(n) || { leads: 0, q: 0, contato: [] };
+    e.leads++; if (l.qualified) e.q++;
+    const ft = (K.first_touch || {})[String(l.id)];
+    if (ft && ft[0] > l.created_at) e.contato.push((ft[0] - l.created_at) / 60);
+    porSdr.set(n, e);
+  });
+
+  const sdrs = [...porSdr.entries()]
+    .filter(([n, v]) => v.leads >= 20 && st.has(n))
+    .map(([nome, v]) => {
+      const s = st.get(nome);
+      return {
+        nome, leads: v.leads, q: v.q, s,
+        ritmo: med(s.dur), contato: med(v.contato),
+        meta: `${int(s.d)}/${int(s.t)} tarefas concluídas · ${int(v.leads)} leads`
+          + (s.dur.length ? ` · ritmo ${med(s.dur).toFixed(1).replace('.', ',')}d` : '')
+          + (v.contato.length ? ` · 1º contato ${dur(med(v.contato))}` : '')
+      };
+    }).sort((a, b) => b.leads - a.leads);
+
+  cardsRadar('#perf-sdr', sdrs, [
+    { k: 'Volume',      bruto: p => p.s.t },
+    { k: 'Ritmo',       bruto: p => p.ritmo, menorMelhor: 1 },
+    { k: 'Consistência', bruto: p => p.s.t ? p.s.d / p.s.t : 0 },
+    { k: 'Prazo',       bruto: p => p.s.prazoN ? p.s.prazoOk / p.s.prazoN : 0 },
+    { k: 'Follow-up',   bruto: p => p.s.fu ? p.s.fud / p.s.fu : 0 },
+    { k: 'Conversão',   bruto: p => p.leads ? p.q / p.leads : 0 },
+    { k: '1º contato',  bruto: p => p.contato, menorMelhor: 1 }
+  ], 'rad-sdr');
+  $('#perf-sdr-sub').textContent =
+    `${sdrs.length} SDRs com 20+ leads no período · cada eixo é relativo ao melhor do time`;
+
+  /* ── Closers ── */
+  const porClo = new Map();
+  c.clo.forEach(l => {
+    const n = uname(l.responsible_user_id);
+    const e = porClo.get(n) || { cards: 0, v: 0 };
+    e.cards++; if (l.venda) e.v++;
+    porClo.set(n, e);
+  });
+
+  const closers = [...porClo.entries()]
+    .filter(([n, v]) => v.cards >= 5 && st.has(n))
+    .map(([nome, v]) => {
+      const s = st.get(nome);
+      return {
+        nome, cards: v.cards, v: v.v, s, ritmo: med(s.dur),
+        meta: `${int(s.d)}/${int(s.t)} tarefas concluídas · ${int(v.cards)} cards`
+          + (s.dur.length ? ` · ritmo ${med(s.dur).toFixed(1).replace('.', ',')}d` : '')
+      };
+    }).sort((a, b) => b.cards - a.cards);
+
+  cardsRadar('#perf-clo', closers, [
+    { k: 'Volume',      bruto: p => p.s.t },
+    { k: 'Ritmo',       bruto: p => p.ritmo, menorMelhor: 1 },
+    { k: 'Consistência', bruto: p => p.s.t ? p.s.d / p.s.t : 0 },
+    { k: 'Prazo',       bruto: p => p.s.prazoN ? p.s.prazoOk / p.s.prazoN : 0 },
+    { k: 'Follow-up',   bruto: p => p.s.fu ? p.s.fud / p.s.fu : 0 },
+    { k: 'Fechamento',  bruto: p => p.cards ? p.v / p.cards : 0 }
+  ], 'rad-clo');
+  $('#perf-clo-sub').textContent =
+    `${closers.length} closers com 5+ cards no período · fechamento no lugar de qualificação`;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
