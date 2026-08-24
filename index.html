@@ -450,7 +450,7 @@ tfoot td{border-top:1px solid var(--line);font-weight:700;color:var(--ink);backg
 const $  = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 
-let K = null, M = null;
+let K = null, M = null, G = null;
 
 /* ── IDs reais da conta (ipiocabeachresidence) ───────────────────────────── */
 const PIPE = { SDR: 13996659, CLOSER: 13994627, NUT: 13994751, RD_SDR: 13949375, RD_CLOSER: 14208303 };
@@ -565,21 +565,42 @@ function computeCore(w) {
   const receita = vend.reduce((s, l) => s + (l.price || 0), 0);
   const leadsMeta = sdr.filter(l => l.canal === 'Meta Ads').length;
   const qualifMeta = sdr.filter(l => l.canal === 'Meta Ads' && l.qualified).length;
-  // CAC e ROAS só fazem sentido comparando o investimento do Meta com o que o
-  // Meta trouxe. Dividir pelo total de vendas (que inclui Google e leads sem
+  // CAC e ROAS só fazem sentido comparando o investimento com o que aquele
+  // investimento trouxe. Dividir pelo total de vendas (que inclui leads sem
   // rastreio) inflaria o ROAS e afundaria o CAC artificialmente.
   const vendMeta = vend.filter(l => l.canal === 'Meta Ads');
   const receitaMeta = vendMeta.reduce((s, l) => s + (l.price || 0), 0);
+
+  // Google entra pelo mesmo caminho do Meta: gasto por campanha por dia.
+  // Para os totais não é preciso casar nome de campanha — só somar a janela.
+  const investGoogle = spendIn(G && G.campaign, w);
+  const leadsGoogle  = sdr.filter(l => l.canal === 'Google Ads').length;
+  const qualifGoogle = sdr.filter(l => l.canal === 'Google Ads' && l.qualified).length;
+  const vendGoogle   = vend.filter(l => l.canal === 'Google Ads');
+  const receitaGoogle = vendGoogle.reduce((s, l) => s + (l.price || 0), 0);
+
+  // Mídia paga = Meta + Google. É o número que responde "quanto custa um lead".
+  const investPago  = invest + investGoogle;
+  const leadsPago   = leadsMeta + leadsGoogle;
+  const qualifPago  = qualifMeta + qualifGoogle;
+  const vendPago    = vendMeta.length + vendGoogle.length;
+  const receitaPago = receitaMeta + receitaGoogle;
+
   return {
     w, sdr, clo, vend, camp, vendMeta,
     leads: sdr.length, leadsCamp: camp.length, leadsMeta,
     invest, qualif, qualifMeta, agend, realiz, prop,
     vendas: vend.length, receita, vendasMeta: vendMeta.length, receitaMeta,
-    cpl:  leadsMeta  ? invest / leadsMeta  : 0,
-    cplq: qualifMeta ? invest / qualifMeta : 0,
-    cac:  vendMeta.length ? invest / vendMeta.length : 0,
+    investGoogle, leadsGoogle, qualifGoogle, receitaGoogle,
+    vendasGoogle: vendGoogle.length,
+    investPago, leadsPago, qualifPago, vendasPago: vendPago, receitaPago,
+    cpl:  leadsPago  ? investPago / leadsPago  : 0,
+    cplq: qualifPago ? investPago / qualifPago : 0,
+    cac:  vendPago ? investPago / vendPago : 0,
     ticket: vend.length ? receita / vend.length : 0,
-    roas: invest ? receitaMeta / invest : 0,
+    roas: investPago ? receitaPago / investPago : 0,
+    cplMeta:   leadsMeta   ? invest / leadsMeta : 0,
+    cplGoogle: leadsGoogle ? investGoogle / leadsGoogle : 0,
     txQualif: pct(qualif, sdr.length),
     txAgend:  pct(agend, qualif),
     txCompar: pct(realiz, agend),
@@ -699,11 +720,12 @@ function renderAll() {
 async function boot() {
   const bust = '?t=' + Date.now();
   try {
-    const [k, m] = await Promise.all([
+    const [k, m, g] = await Promise.all([
       fetch('data/kommo_leads.json' + bust).then(r => r.json()),
-      fetch('data/meta_spend.json' + bust).then(r => r.ok ? r.json() : null).catch(() => null)
+      fetch('data/meta_spend.json' + bust).then(r => r.ok ? r.json() : null).catch(() => null),
+      fetch('data/google_spend.json' + bust).then(r => r.ok ? r.json() : null).catch(() => null)
     ]);
-    K = k; M = m;
+    K = k; M = m; G = g;
   } catch (e) {
     $('#boot').innerHTML = `<p style="color:var(--bad)">não consegui carregar <b>data/kommo_leads.json</b>.<br>rode <code>python3 fetch_kommo_ibr.py</code> e sirva a pasta por http.</p>`;
     console.error(e); return;
@@ -789,8 +811,8 @@ function renderDiagnostico(c) {
 
   $('#diag-kpis').innerHTML = [
     kpi('Leads', int(c.leads), `${delta(c.leads, p.leads)} vs período anterior`, 'ink'),
-    kpi('Investimento Meta', kbrl(c.invest), delta(c.invest, p.invest)),
-    kpi('CPL Meta', c.cpl ? brl(c.cpl) : '—', `${int(c.leadsMeta)} leads Meta ${delta(c.cpl, p.cpl, true)}`),
+    kpi('Investimento', kbrl(c.investPago), `${kbrl(c.invest)} Meta · ${kbrl(c.investGoogle)} Google ${delta(c.investPago, p.investPago)}`),
+    kpi('CPL', c.cpl ? brl(c.cpl) : '—', `${int(c.leadsPago)} leads de mídia paga ${delta(c.cpl, p.cpl, true)}`),
     kpi('Qualificados', int(c.qualif), `${c.txQualif.toFixed(0)}% dos leads ${delta(c.txQualif, p.txQualif)}`, 'accent'),
     kpi('CPL qualificado', c.cplq ? brl(c.cplq) : '—', delta(c.cplq, p.cplq, true)),
     kpi('Reuniões agendadas', int(c.agend), `${pctS(c.agend, c.qualif)} dos qualificados`),
@@ -798,8 +820,8 @@ function renderDiagnostico(c) {
     kpi('Propostas', int(c.prop), `${pctS(c.prop, c.realiz)} das reuniões`),
     kpi('Vendas', int(c.vendas), `${delta(c.vendas, p.vendas)} vs anterior`, 'accent'),
     kpi('Receita', kbrl(c.receita), `ticket ${c.ticket ? brl(c.ticket) : '—'}`, 'ink'),
-    kpi('CAC Meta (teto)', c.cac ? brl(c.cac) : '—', `${int(c.vendasMeta)} venda(s) atribuída(s) ao Meta`),
-    kpi('ROAS Meta (piso)', c.roas ? c.roas.toFixed(1).replace('.', ',') + 'x' : '—', `${kbrl(c.receitaMeta)} de receita rastreada`)
+    kpi('CAC (teto)', c.cac ? brl(c.cac) : '—', `${int(c.vendasPago)} venda(s) atribuída(s) a mídia paga`),
+    kpi('ROAS (piso)', c.roas ? c.roas.toFixed(1).replace('.', ',') + 'x' : '—', `${kbrl(c.receitaPago)} de receita rastreada`)
   ].join('');
 
   /* avisos de qualidade de dado — sem isso o resto do dashboard engana */
@@ -808,8 +830,8 @@ function renderDiagnostico(c) {
   const avisos = [];
   if (semCanal / Math.max(c.leads, 1) > 0.15)
     avisos.push(`<b>${pctS(semCanal, c.leads)} dos leads do período estão sem canal</b> no CRM (${int(semCanal)} de ${int(c.leads)}). Tudo que é recorte por canal, público ou criativo enxerga só a parte rastreada — os totais do funil, não.`);
-  if (gads)
-    avisos.push(`<b>Google Ads não está integrado.</b> Os ${int(gads)} leads de Google aparecem no volume e no funil, mas o investimento dele não entra em CPL, CAC nem ROAS — esses três olham só o Meta.`);
+  if (gads && !(G && G.campaign))
+    avisos.push(`<b>Investimento do Google indisponível.</b> Os ${int(gads)} leads de Google entram no volume e no funil, mas sem o gasto dele o CPL, o CAC e o ROAS olham só o Meta.`);
   const apagao = c.w.from <= new Date(2026, 6, 10) && c.w.to >= new Date(2026, 5, 17);
   if (apagao)
     avisos.push(`<b>Apagão de rastreio entre 17/06 e 10/07/2026:</b> nesse intervalo os leads entraram sem UTM. Comparar junho e julho com agosto em canal/público/criativo mede o rastreio, não a mídia.`);
@@ -996,7 +1018,7 @@ function renderEvolucao(c) {
     kpi('Semanas no período', int(wk.length), c.w.label, 'ink'),
     kpi('Média de leads/semana', int(wk.reduce((s, k) => s + k.leads, 0) / Math.max(wk.length, 1)), semanaTop ? `pico de ${int(semanaTop.leads)} na semana de ${semanaTop.label}` : ''),
     kpi('Melhor taxa de qualificação', melhorTx ? pctS(melhorTx.q, melhorTx.leads) : '—', melhorTx ? `semana de ${melhorTx.label}` : '', 'accent'),
-    kpi('Investimento no período', kbrl(c.invest), `CPL médio ${c.cpl ? brl(c.cpl) : '—'}`),
+    kpi('Investimento Meta no período', kbrl(c.invest), `CPL Meta ${c.cplMeta ? brl(c.cplMeta) : '—'}`),
     kpi('Vendas no período', int(c.vendas), `${kbrl(c.receita)} de receita`)
   ].join('');
 
@@ -1073,7 +1095,7 @@ function renderEvolucao(c) {
       k.meta && k.inv ? brl(k.inv / k.meta) : '—', int(k.q), pctS(k.q, k.leads),
       int(k.a), int(k.r), int(k.p), `<b>${int(k.v)}</b>`, k.rec ? kbrl(k.rec) : '—'
     ]),
-    ['Total', int(c.leads), int(c.leadsMeta), kbrl(c.invest), c.cpl ? brl(c.cpl) : '—',
+    ['Total', int(c.leads), int(c.leadsMeta), kbrl(c.invest), c.cplMeta ? brl(c.cplMeta) : '—',
      int(c.qualif), pctS(c.qualif, c.leads), int(c.agend), int(c.realiz), int(c.prop), int(c.vendas), kbrl(c.receita)]);
 }
 
