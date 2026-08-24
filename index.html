@@ -247,6 +247,12 @@ tfoot td{border-top:1px solid var(--line);font-weight:700;color:var(--ink);backg
 [data-tip]{position:relative;cursor:default}
 [data-tip]:hover::after{content:attr(data-tip);position:absolute;left:50%;bottom:calc(100% + 8px);transform:translateX(-50%);
  background:var(--ink);color:var(--plane);font-size:11.5px;font-weight:600;padding:6px 10px;border-radius:3px;white-space:nowrap;z-index:70;pointer-events:none;box-shadow:0 8px 24px -8px rgba(0,0,0,.5)}
+/* Variante para explicação longa: quebra em linhas em vez de virar uma tira. */
+[data-tip].tip-long:hover::after{white-space:normal;width:min(300px,80vw);line-height:1.5;font-weight:500;padding:9px 12px;border-radius:var(--r-xs)}
+.tip-mark{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;margin-left:5px;
+ border:1px solid var(--mut);border-radius:50%;color:var(--mut);font-family:var(--f-mono);font-size:9px;
+ font-weight:700;cursor:help;vertical-align:middle;line-height:1}
+.tip-mark:hover{border-color:var(--accent);color:var(--accent)}
 
 @media(max-width:980px){
  .grid>*{grid-column:span 12!important}
@@ -395,9 +401,9 @@ tfoot td{border-top:1px solid var(--line);font-weight:700;color:var(--ink);backg
       <div class="grid" style="margin-top:14px">
         <div class="card span12"><div class="ch"><div><h3>Atividades por consultor</h3><div class="sub" id="ativ-sub">Tarefas criadas, concluídas e leads sob responsabilidade</div></div></div>
           <div class="tblwrap" style="border:none;box-shadow:none"><table id="ativ-users"></table></div></div>
-        <div class="card span12"><div class="ch"><div><h3>Perfil comportamental dos SDRs</h3><div class="sub" id="perf-sdr-sub">Cada eixo é a nota da pessoa em relação ao melhor do time no período</div></div><span class="cap">100 = melhor do time</span></div>
+        <div class="card span12"><div class="ch"><div><h3>Perfil comportamental dos SDRs<span class="tip-mark tip-long" data-tip="Ritmo e Prazo usam a última alteração da tarefa como aproximação da conclusão — o Kommo não expõe data de conclusão. Para tarefa concluída e não tocada depois, é exato; para tarefa reaberta ou editada, superestima o tempo.">?</span></h3><div class="sub" id="perf-sdr-sub">Cada eixo é a nota da pessoa em relação ao melhor do time no período</div></div><span class="cap">100 = melhor do time</span></div>
           <div class="radars" id="perf-sdr"></div></div>
-        <div class="card span12"><div class="ch"><div><h3>Perfil comportamental dos Closers</h3><div class="sub" id="perf-clo-sub">Mesma leitura, com fechamento no lugar de qualificação</div></div><span class="cap">100 = melhor do time</span></div>
+        <div class="card span12"><div class="ch"><div><h3>Perfil comportamental dos Closers<span class="tip-mark tip-long" data-tip="Ritmo e Prazo usam a última alteração da tarefa como aproximação da conclusão — o Kommo não expõe data de conclusão. Para tarefa concluída e não tocada depois, é exato; para tarefa reaberta ou editada, superestima o tempo.">?</span></h3><div class="sub" id="perf-clo-sub">Mesma leitura, com fechamento no lugar de qualificação</div></div><span class="cap">100 = melhor do time</span></div>
           <div class="radars" id="perf-clo"></div></div>
         <div class="card span12"><div class="ch"><div><h3>Mix por tipo de tarefa</h3><div class="sub">Distribuição no período</div></div></div>
           <div id="ativ-tipos"></div></div>
@@ -792,12 +798,14 @@ function buildMethodology() {
     ['Proposta', 'Card do Closer em <b>Proposta enviada</b>, <b>Follow-up</b>, <b>Sinal verde</b> ou <b>Dados de venda solicitados</b>.'],
     ['Venda', 'Somente status <b>142 no funil Closer</b>, com data de fechamento dentro da janela. O mesmo 142 no SDR e na Importação RD significa reunião realizada e <b>não</b> entra aqui.', 'venda = status 142 ∧ pipeline = Closer ∧ closed_at ∈ janela'],
     ['Receita', 'Soma do campo <b>preço</b> dos negócios ganhos no período.'],
-    ['Investimento', 'Gasto do Meta Ads da conta IBR, somado dia a dia dentro da janela. Google Ads ainda não está integrado — os leads de Google aparecem no volume, mas não entram no CPL, CAC nem ROAS.'],
-    ['CPL', 'Investimento ÷ leads do <b>Meta</b> no período (não divide pelo total de leads, que inclui Google e não rastreados).', 'CPL = investimento Meta ÷ leads Meta'],
-    ['CPL qualificado', 'Investimento ÷ leads do Meta que qualificaram.', 'CPLq = investimento Meta ÷ qualificados Meta'],
-    ['CAC Meta', 'Investimento ÷ vendas cujo lead tem <b>Meta Ads</b> como origem. É um <b>teto</b>: parte das vendas do Meta entrou sem rastreio e está contada como "não rastreado", então o CAC real é menor que o exibido.', 'CAC = investimento Meta ÷ vendas com canal = Meta Ads'],
-    ['ROAS Meta', 'Receita das vendas atribuídas ao Meta ÷ investimento do Meta. É um <b>piso</b>, pela mesma razão: a receita sem rastreio não entra no numerador.', 'ROAS = receita das vendas Meta ÷ investimento Meta'],
-    ['Público e criativo', 'Os campos <b>Campanha</b> e <b>Anúncio</b> do contato chegam como slug de UTM e são traduzidos para o mesmo rótulo usado no gasto do Meta — é isso que permite cruzar lead com investimento por público e por peça.'],
+    ['Investimento', 'Gasto de <b>mídia paga</b> somado dia a dia dentro da janela: Meta Ads por adset e Google Ads por campanha. O KPI mostra o total e abre a divisão entre os dois no subtítulo.'],
+    ['CPL', 'Investimento de mídia paga ÷ leads de <b>Meta + Google</b>. Não divide pelo total de leads, que inclui os não rastreados.', 'CPL = (investimento Meta + Google) ÷ (leads Meta + Google)'],
+    ['CPL qualificado', 'O mesmo investimento ÷ os leads de mídia paga que qualificaram.', 'CPLq = investimento pago ÷ qualificados de mídia paga'],
+    ['CAC', 'Investimento ÷ vendas cujo lead tem <b>Meta Ads</b> ou <b>Google Ads</b> como origem. É um <b>teto</b>: parte das vendas entrou sem rastreio e está contada como "não rastreado", então o CAC real é menor que o exibido.', 'CAC = investimento pago ÷ vendas com canal Meta ou Google'],
+    ['ROAS', 'Receita das vendas atribuídas a mídia paga ÷ investimento. É um <b>piso</b>, pela mesma razão: a receita sem rastreio não entra no numerador.', 'ROAS = receita das vendas pagas ÷ investimento pago'],
+    ['Público e criativo', 'Os campos <b>Campanha</b> e <b>Anúncio</b> do contato chegam como slug de UTM e são traduzidos para o mesmo rótulo usado no gasto do Meta — é isso que permite cruzar lead com investimento por público e por peça. Essas duas tabelas cobrem <b>só o Meta</b>; o Google entra nos indicadores de topo, mas ainda não no recorte por público.'],
+    ['Perfil comportamental', 'Radar por pessoa, com cada eixo normalizado <b>em relação ao melhor do time no período</b> — 100 é sempre alguém, não uma meta. Serve para comparar formato entre pessoas; não diz se o time vai bem em termos absolutos. Entram SDRs com 20+ leads e closers com 5+ cards.'],
+    ['Ritmo e Prazo', 'Ambos usam a <b>última alteração da tarefa</b> como aproximação de quando ela foi concluída — o Kommo não expõe data de conclusão. Para tarefa concluída e não tocada depois, o número é exato; para tarefa reaberta ou editada, ele <b>superestima</b> o tempo. Ritmo é a mediana de dias entre criar e concluir; Prazo é a fatia das concluídas dentro da data de vencimento.', 'ritmo = mediana(updated_at − created_at) · prazo = concluídas com updated_at ≤ complete_till'],
     ['Base RD', 'Os funis <b>Importação RD</b> e <b>Base Closer RD</b> são trabalho sobre a base legada importada, não demanda de mídia. Ficam fora de leads, CPL e taxa de qualificação.']
   ];
   $('#meth-body').innerHTML =
