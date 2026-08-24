@@ -1,41 +1,95 @@
-# IBR — Análise de Vendas · Julho/2026
+# Mensuração · Ipioca Beach Residence
 
-Análise das vendas do **Ipioca Beach Residence** (CRM Kommo) referente a **julho/2026**, com foco em canal de aquisição, público/audiência, criativo e perfil do cliente que fecha.
+Dashboard de mídia paga e funil comercial do **Ipioca Beach Residence**, cruzando
+CRM (Kommo) com investimento de **Meta Ads** e **Google Ads**.
 
-## 📊 Dashboard
+**No ar:** https://beatriz-moraes082.github.io/mensuracao-ibr/
 
-Abra o arquivo [`dashboard.html`](./dashboard.html) no navegador (página única, tema claro/escuro, com tooltips).
+Os dados se atualizam sozinhos **às 7h e às 14h** (horário de Brasília). Não é
+tempo real: o rodapé do dash mostra a data da última coleta.
 
-## Resumo do mês
+## Como funciona
 
-| Indicador | Valor |
+```
+fetch_kommo_ibr.py    ─┐
+fetch_meta_spend.py    ├─→  data/*.json  ─→  index.html  ─→  GitHub Pages
+fetch_google_spend.py ─┘
+```
+
+Um workflow do GitHub Actions roda os três coletores, confere se os dados vieram
+inteiros e commita `data/` de volta no `main`. O Pages republica sozinho a cada
+push. Se uma coleta falhar, nada é publicado e o dash continua mostrando os
+últimos dados bons — com a data no rodapé denunciando que envelheceu.
+
+| Arquivo | O que faz |
 |---|---|
-| Vendas ganhas (funil Closer) | **27 negócios** |
-| Faturamento | **R$ 1.191.955** |
-| Ticket médio | R$ 44.146 |
-| Ciclo de venda (mediana) | 0 dia (fecha no mesmo dia) |
-| Conversão no Closer | 35,5% |
+| [`index.html`](./index.html) | O dashboard inteiro — página única, sem build |
+| [`fetch_kommo_ibr.py`](./fetch_kommo_ibr.py) | Leads dos funis SDR, Closer e Nutrição, tarefas e status |
+| [`fetch_meta_spend.py`](./fetch_meta_spend.py) | Gasto do Meta por adset e por criativo, dia a dia |
+| [`fetch_google_spend.py`](./fetch_google_spend.py) | Gasto do Google por campanha, dia a dia |
+| [`ibr_normalize.py`](./ibr_normalize.py) | Normaliza canal, público e criativo a partir das UTMs |
+| [`sobe_secrets.py`](./sobe_secrets.py) | Envia credenciais do `.env` para os secrets do GitHub |
+| [`google_oauth_setup.py`](./google_oauth_setup.py) | Gera o `refresh_token` do Google Ads |
 
-> **Definição de "venda":** apenas status `142 = "Venda ganha"` do funil **Closer**. O mesmo status `142` nos funis **SDR** e **Importação RD** significa "Reunião realizada" e **não** é venda.
+## Rodar fora de hora
 
-## Canal de aquisição
+Não precisa de nada instalado — dispara o mesmo workflow lá no GitHub:
 
-- **Meta Ads:** 10 vendas · **Google Ads:** 8 · **Não rastreado:** 9
-- Públicos que mais convertem: **Remarketing**, **Interesses (alto padrão)** e **listas mornas**.
-- Criativos de **vídeo** (drone / "Léo") aparecem entre os que fecham.
+```bash
+gh workflow run "Atualiza dados do dashboard" --repo beatriz-moraes082/mensuracao-ibr
+```
 
-## Perfil do cliente que fecha
+Para conferir a saúde das últimas execuções:
 
-- Viaja **1x ou mais por ano** (91%), hoje se hospeda em **hotel/resort** (64%) e **ainda não tinha multipropriedade** (68%).
-- **Assistiu à apresentação** (86%), reunião por **vídeo-chamada** (94%).
-- Investe **até R$ 7 mil/ano** em férias (64%).
+```bash
+gh run list --repo beatriz-moraes082/mensuracao-ibr --limit 5
+```
 
-## Leituras-chave
+## Credenciais
 
-- A venda se ganha **na apresentação** e **no mesmo dia**.
-- **Lead Score não prevê fechamento** — vendas vieram de todos os scores (inclusive E e D).
-- **Atribuição incompleta:** 33% das vendas sem canal e 44% sem criativo no CRM. Corrigir o rastreio (UTMs + integração de anúncios → campos do Kommo) é a maior alavanca de precisão.
+Ficam nos **secrets do GitHub**, nunca no repositório. O `.env` local só é
+necessário para rodar os coletores na própria máquina.
 
----
+| Secret | Origem | Expira? |
+|---|---|---|
+| `KOMMO_TOKEN` | Kommo → Integrações → chave de longa duração | já foi revogado sem aviso; se der 401, gere outro |
+| `META_TOKEN` | Meta Business | ~60 dias |
+| `GOOGLE_ADS_DEVELOPER_TOKEN` | [API Center](https://ads.google.com/aw/apicenter) da MCC | não |
+| `GOOGLE_ADS_CLIENT_ID` / `_SECRET` / `_REFRESH_TOKEN` | `google_oauth_setup.py` | não |
 
-*Fonte: Kommo (`ipiocabeachresidence`) · funil Closer · fechados entre 01–31/07/2026. Dados individuais de clientes (PII) não são versionados — o dashboard contém apenas dados agregados.*
+Trocar uma credencial, num passo só (pede, valida na API e só então grava e envia):
+
+```bash
+python3 sobe_secrets.py --novo KOMMO_TOKEN
+```
+
+Ele se recusa a enviar um valor que a API rejeita — assim um `.env` desatualizado
+não sobrescreve um secret que está funcionando.
+
+## O que os números significam
+
+O botão **Metodologia**, no topo do dash, define cada indicador e mostra a
+fórmula. Vale destacar três coisas que não são óbvias:
+
+- **Venda** é só o status `142` do funil **Closer**. O mesmo `142` no SDR e na
+  Importação RD significa "reunião realizada" e não entra.
+- **CAC e ROAS** são teto e piso, não valores exatos: parte das vendas entra sem
+  rastreio e fica fora do numerador/denominador.
+- **Ritmo e Prazo** usam a última alteração da tarefa como aproximação da
+  conclusão — o Kommo não expõe data de conclusão.
+
+## Limitações conhecidas
+
+- **Junho/2026** está fora do comparativo mensal: o apagão de rastreio de 17/06 a
+  10/07 deixou os leads sem UTM, então o CPL do mês mediria o rastreio, não a
+  mídia. Os leads seguem no dash, no filtro "Tudo".
+- **Público e criativo** cobrem só o Meta. O Google entra no CPL, CAC e ROAS do
+  topo, mas ainda não no recorte por público.
+- **~4% do gasto do Google** não casa com lead: algumas campanhas chegam com
+  `utm_campaign` sem o sufixo de data, ambíguo entre duas campanhas. Resolve-se
+  padronizando a UTM no Google Ads.
+
+## Privacidade
+
+O JSON publicado é agregado. Telefone e e-mail de lead são mascarados **na
+origem**, antes de sair do coletor, e o repositório não guarda e-mail do time.
