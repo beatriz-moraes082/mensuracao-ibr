@@ -108,8 +108,18 @@ def modo_novo(chave):
 
     env = le_env()
     print(f"\n  Novo valor para {chave}")
-    print("  A digitação não aparece na tela. Cole e tecle Enter.\n")
-    valor = getpass.getpass(f"  {chave}: ").strip()
+
+    if not sys.stdin.isatty():
+        # Veio de um pipe — pbpaste, por exemplo. Evita o prompt cego, que
+        # não mostra nada ao colar e parece travado.
+        valor = sys.stdin.read().strip()
+        print("  Lido da entrada padrão.")
+    else:
+        print("  A digitação NÃO aparece na tela — nem asteriscos. Cole e tecle Enter.")
+        print("  Se preferir evitar o prompt:  pbpaste | python3 sobe_secrets.py --novo "
+              f"{chave}\n")
+        valor = getpass.getpass(f"  {chave}: ").strip()
+
     if not valor:
         raise SystemExit("  Nada recebido — nada foi alterado.")
     print(f"\n  Recebi {len(valor)} caracteres.")
