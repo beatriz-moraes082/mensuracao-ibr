@@ -243,6 +243,14 @@ tfoot td{border-top:1px solid var(--line);font-weight:700;color:var(--ink);backg
 .ft{margin-top:56px;padding-top:24px;border-top:1px solid var(--line);text-align:center;font-size:11.5px;color:var(--mut);line-height:1.9;font-family:var(--f-mono)}
 .ft b{color:var(--ink2)}
 .ft a{color:var(--accent);text-decoration:none;font-weight:700}
+.ft-by{margin-top:20px;display:flex;align-items:center;justify-content:center;gap:9px;
+ font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--mut)}
+.ft-logo{height:19px;width:auto;display:block}
+/* Mesmo padrão de três estados do tema (claro / escuro explícito / escuro do sistema). */
+.ft-logo-d{display:none}
+:root[data-theme="dark"] .ft-logo-l{display:none}:root[data-theme="dark"] .ft-logo-d{display:block}
+@media(prefers-color-scheme:dark){:root:where(:not([data-theme="light"])) .ft-logo-l{display:none}
+ :root:where(:not([data-theme="light"])) .ft-logo-d{display:block}}
 
 [data-tip]{position:relative;cursor:default}
 [data-tip]:hover::after{content:attr(data-tip);position:absolute;left:50%;bottom:calc(100% + 8px);transform:translateX(-50%);
@@ -457,6 +465,11 @@ tfoot td{border-top:1px solid var(--line);font-weight:700;color:var(--ink);backg
   <footer class="ft">
     <div><b>Fonte:</b> Kommo <span id="ft-account">·</span> + Meta Ads · atualizado <b id="ft-updated">—</b></div>
     <div><span>Dados agregados. Telefone e e-mail são mascarados na origem — o JSON publicado não contém PII completa.</span></div>
+    <div class="ft-by">
+      <span>Desenvolvido por</span>
+      <img class="ft-logo ft-logo-l" src="img/trilha-on-light.png" alt="Trilha Performance Digital" width="2902" height="524">
+      <img class="ft-logo ft-logo-d" src="img/trilha-on-dark.png" alt="Trilha Performance Digital" width="520" height="94">
+    </div>
   </footer>
 </main>
 
