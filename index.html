@@ -777,6 +777,16 @@ async function boot() {
   // lead com outro id, então somá-lo dupla-contaria quem já está no SDR (hoje
   // 393 dos 430 cards do Closer repetem um dkey da base de entrada).
   K.entrada = [...K.sdr, ...K.nutricao];
+  // Primeiro card de cada pessoa na entrada, indexado pelo dkey (hash do
+  // telefone). É o que permite ao ciclo de vendas contar desde a chegada do
+  // lead: o card do Closer nasce no avanço, então medir por ele daria zero dia
+  // para quem foi cadastrado lá já ganho.
+  K.primeiraEntrada = new Map();
+  for (const l of K.entrada) {
+    if (!l.dkey || !l.created_at) continue;
+    const at = K.primeiraEntrada.get(l.dkey);
+    if (at === undefined || l.created_at < at) K.primeiraEntrada.set(l.dkey, l.created_at);
+  }
   $('#boot').hidden = true; $('#app').hidden = false;
   $('#ft-account').textContent = '(' + (K.account || 'ipiocabeachresidence') + ')';
   $('#ft-updated').textContent = new Date(K.fetched_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
@@ -815,6 +825,7 @@ function buildMethodology() {
     ['Proposta', 'Card do Closer em <b>Proposta enviada</b>, <b>Follow-up</b>, <b>Sinal verde</b> ou <b>Dados de venda solicitados</b>.'],
     ['Venda', 'Somente status <b>142 no funil Closer</b>, com data de fechamento dentro da janela. O mesmo 142 no SDR e na Importação RD significa reunião realizada e <b>não</b> entra aqui.', 'venda = status 142 ∧ pipeline = Closer ∧ closed_at ∈ janela'],
     ['Receita', 'Soma do campo <b>preço</b> dos negócios ganhos no período.'],
+    ['Ciclo de vendas', 'Mediana de dias entre o <b>primeiro card da pessoa</b> nos funis de entrada e o fechamento. Não conta do card do Closer: ele é recriado quando o lead avança, então mediria zero dia para quem chega lá já ganho. Os dois cards são casados pelo telefone. Quando não existe card de entrada — cadastro direto no Closer, ou origem anterior ao início da coleta — vale o card do Closer, que ali é o primeiro que existe; parte desses nasce já ganha e entra como zero dia, então <b>subestima</b> a mediana. O KPI mostra quantas vendas do período estão nessa situação.', 'ciclo = mediana(closed_at − created_at do 1º card da pessoa, casado por telefone)'],
     ['Investimento', 'Gasto de <b>mídia paga</b> somado dia a dia dentro da janela: Meta Ads por adset e Google Ads por campanha. O KPI mostra o total e abre a divisão entre os dois no subtítulo.'],
     ['CPL', 'Investimento de mídia paga ÷ leads de <b>Meta + Google</b>. Não divide pelo total de leads, que inclui os não rastreados.', 'CPL = (investimento Meta + Google) ÷ (leads Meta + Google)'],
     ['CPL qualificado', 'O mesmo investimento ÷ os leads de mídia paga que qualificaram.', 'CPLq = investimento pago ÷ qualificados de mídia paga'],
@@ -1638,14 +1649,28 @@ function renderPerfis(c, tasks, uname) {
 function renderVendas(c) {
   const v = c.vend;
   const maior = v.reduce((a, l) => Math.max(a, l.price || 0), 0);
-  const ciclos = v.filter(l => l.closed_at && l.created_at).map(l => (l.closed_at - l.created_at) / 86400);
+  // O ciclo conta do PRIMEIRO card da pessoa até o fechamento. Antes contava do
+  // card do Closer, que é recriado no avanço e por isso dava mediana de 1 dia.
+  // Sem card de entrada casado pelo telefone — cadastro direto no Closer, ou
+  // origem anterior ao início da coleta — o card do Closer é o primeiro que
+  // existe, então é dele que se conta. Parte desses nasce já ganha e entra como
+  // zero dia, o que puxa a mediana para baixo; o KPI diz quantos são.
+  const inicioDe = l => {
+    const e = l.dkey ? K.primeiraEntrada.get(l.dkey) : undefined;
+    return e === undefined ? (l.created_at || 0) : Math.min(e, l.created_at || e);
+  };
+  const semEntrada = v.filter(l => l.closed_at && l.created_at && !(l.dkey && K.primeiraEntrada.has(l.dkey))).length;
+  const ciclos = v.filter(l => l.closed_at && inicioDe(l)).map(l => (l.closed_at - inicioDe(l)) / 86400);
   const rastreadas = v.filter(l => l.canal !== 'Não rastreado').length;
 
   $('#vendas-kpis').innerHTML = [
     kpi('Vendas ganhas', int(v.length), c.w.label, 'accent'),
     kpi('Receita', kbrl(c.receita), `${int(v.length)} negócio(s)`, 'ink'),
     kpi('Ticket médio', c.ticket ? brl(c.ticket) : '—', maior ? `maior venda ${kbrl(maior)}` : ''),
-    kpi('Ciclo mediano', ciclos.length ? mediana(ciclos).toFixed(1).replace('.', ',') : '—', 'dias entre criação do card e fechamento', '', ciclos.length ? ' dias' : ''),
+    kpi('Ciclo mediano', ciclos.length ? mediana(ciclos).toFixed(1).replace('.', ',') : '—',
+        ciclos.length ? `do 1º card do lead ao fechamento${semEntrada ? ` · ${int(semEntrada)} sem card no SDR, contada do Closer` : ''}`
+                      : 'dias entre o 1º card do lead e o fechamento',
+        '', ciclos.length ? ' dias' : ''),
     kpi('Vendas com canal', int(rastreadas), `${pctS(rastreadas, v.length)} rastreadas`)
   ].join('');
 
