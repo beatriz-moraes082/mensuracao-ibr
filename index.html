@@ -418,7 +418,7 @@ tfoot td{border-top:1px solid var(--line);font-weight:700;color:var(--ink);backg
           <div class="pyr" id="pyr-closer"></div><div id="rates-closer"></div></div>
         <div class="card span12"><div class="ch"><div><h3>Funil completo</h3><div class="sub">Da entrada do lead até a venda — conversão acumulada</div></div></div>
           <div class="pyr" id="pyr-full"></div></div>
-        <div class="card span6"><div class="ch"><div><h3>Perdas no SDR</h3><div class="sub" id="loss-sdr-sub">—</div></div></div><div id="loss-sdr"></div></div>
+        <div class="card span6"><div class="ch"><div><h3>Perdas nos funis de entrada</h3><div class="sub" id="loss-sdr-sub">—</div></div></div><div id="loss-sdr"></div></div>
         <div class="card span6"><div class="ch"><div><h3>Perdas no Closer</h3><div class="sub" id="loss-closer-sub">—</div></div></div><div id="loss-closer"></div></div>
         <div class="card span12"><div class="ch"><div><h3>Base RD</h3><div class="sub">Funis de importação — trabalho sobre a base legada, fora da mídia paga</div></div></div>
           <div class="grid" id="funis-rd" style="gap:14px"></div></div>
@@ -618,22 +618,22 @@ const CAMPANHA = new Set(['Meta Ads', 'Google Ads']);
 // Metas das taxas do comercial, em %. Alimentam as barras do bloco de Conversão
 // na aba Evolução — mudar aqui muda o dash inteiro.
 const METAS = { agendamento: 40, comparecimento: 65, qualifAgend: 60 };
-const sdrIn    = w => K.entrada.filter(l => inWin(l.created_at, w));
+const entradaIn = w => K.entrada.filter(l => inWin(l.created_at, w));
 const closerIn = w => K.closer.filter(l => inWin(l.created_at, w));
 const vendasIn = w => K.closer.filter(l => l.venda && inWin(l.closed_at, w));
 
 /** Bloco central de números do período — tudo que o dashboard mostra sai daqui. */
 function computeCore(w) {
-  const sdr = sdrIn(w), vend = vendasIn(w), clo = closerIn(w);
-  const camp = sdr.filter(l => CAMPANHA.has(l.canal));
+  const ent = entradaIn(w), vend = vendasIn(w), clo = closerIn(w);
+  const camp = ent.filter(l => CAMPANHA.has(l.canal));
   const invest = spendIn(M && M.adset, w);
-  const qualif = sdr.filter(l => l.qualified).length;
-  const agend  = sdr.filter(l => l.reuniao_agendada).length;
-  const realiz = sdr.filter(l => l.reuniao_realizada).length;
+  const qualif = ent.filter(l => l.qualified).length;
+  const agend  = ent.filter(l => l.reuniao_agendada).length;
+  const realiz = ent.filter(l => l.reuniao_realizada).length;
   const prop   = clo.filter(l => l.proposta || PROPOSTA_STAGES.includes(l.status)).length;
   const receita = vend.reduce((s, l) => s + (l.price || 0), 0);
-  const leadsMeta = sdr.filter(l => l.canal === 'Meta Ads').length;
-  const qualifMeta = sdr.filter(l => l.canal === 'Meta Ads' && l.qualified).length;
+  const leadsMeta = ent.filter(l => l.canal === 'Meta Ads').length;
+  const qualifMeta = ent.filter(l => l.canal === 'Meta Ads' && l.qualified).length;
   // CAC e ROAS só fazem sentido comparando o investimento com o que aquele
   // investimento trouxe. Dividir pelo total de vendas (que inclui leads sem
   // rastreio) inflaria o ROAS e afundaria o CAC artificialmente.
@@ -643,8 +643,8 @@ function computeCore(w) {
   // Google entra pelo mesmo caminho do Meta: gasto por campanha por dia.
   // Para os totais não é preciso casar nome de campanha — só somar a janela.
   const investGoogle = spendIn(G && G.campaign, w);
-  const leadsGoogle  = sdr.filter(l => l.canal === 'Google Ads').length;
-  const qualifGoogle = sdr.filter(l => l.canal === 'Google Ads' && l.qualified).length;
+  const leadsGoogle  = ent.filter(l => l.canal === 'Google Ads').length;
+  const qualifGoogle = ent.filter(l => l.canal === 'Google Ads' && l.qualified).length;
   const vendGoogle   = vend.filter(l => l.canal === 'Google Ads');
   const receitaGoogle = vendGoogle.reduce((s, l) => s + (l.price || 0), 0);
 
@@ -660,8 +660,8 @@ function computeCore(w) {
   const receitaPago = receitaMeta + receitaGoogle;
 
   return {
-    w, sdr, clo, vend, camp, vendMeta,
-    leads: sdr.length, leadsCamp: camp.length, leadsMeta,
+    w, ent, clo, vend, camp, vendMeta,
+    leads: ent.length, leadsCamp: camp.length, leadsMeta,
     invest, qualif, qualifMeta, agend, realiz, prop,
     vendas: vend.length, receita, vendasMeta: vendMeta.length, receitaMeta,
     investGoogle, leadsGoogle, qualifGoogle, receitaGoogle,
@@ -675,16 +675,16 @@ function computeCore(w) {
     roas: investPago ? receitaPago / investPago : 0,
     cplMeta:   leadsMeta   ? invest / leadsMeta : 0,
     cplGoogle: leadsGoogle ? investGoogle / leadsGoogle : 0,
-    txQualif: pct(qualif, sdr.length),
+    txQualif: pct(qualif, ent.length),
     txAgend:  pct(agend, qualif),
     txCompar: pct(realiz, agend),
     txProp:   pct(prop, realiz),
     txVenda:  pct(vend.length, prop),
     // As duas conversões que resumem cada time: o SDR entrega reunião realizada,
     // o Closer transforma reunião em venda.
-    txSdr:    pct(realiz, sdr.length),
+    txSdr:    pct(realiz, ent.length),
     txCloser: pct(vend.length, realiz),
-    txGlobal: pct(vend.length, sdr.length)
+    txGlobal: pct(vend.length, ent.length)
   };
 }
 
@@ -919,7 +919,7 @@ function renderDiagnostico(c) {
       kpi('Qualificados', int(c.qualif), `${c.txQualif.toFixed(0)}% dos leads ${delta(c.txQualif, p.txQualif)}`, 'accent'),
       kpi('Reuniões agendadas', int(c.agend), `${pctS(c.agend, c.qualif)} dos qualificados`),
       kpi('Reuniões realizadas', int(c.realiz), `${pctS(c.realiz, c.agend)} de comparecimento`),
-      kpi('Propostas', int(c.prop), `${pctS(c.prop, c.realiz)} das reuniões`),
+      kpi('Propostas', int(c.prop), `${pctS(c.prop, c.clo.length)} dos cards no Closer`),
       kpi('Vendas', int(c.vendas), `${delta(c.vendas, p.vendas)} vs anterior`, 'accent')
     ]),
     grupo('Taxas de conversão', [
@@ -938,8 +938,8 @@ function renderDiagnostico(c) {
   ].join('');
 
   /* avisos de qualidade de dado — sem isso o resto do dashboard engana */
-  const semCanal = c.sdr.filter(l => l.canal === 'Não rastreado').length;
-  const gads = c.sdr.filter(l => l.canal === 'Google Ads').length;
+  const semCanal = c.ent.filter(l => l.canal === 'Não rastreado').length;
+  const gads = c.ent.filter(l => l.canal === 'Google Ads').length;
   const avisos = [];
   if (semCanal / Math.max(c.leads, 1) > 0.15)
     avisos.push(`<b>${pctS(semCanal, c.leads)} dos leads do período estão sem canal</b> no CRM (${int(semCanal)} de ${int(c.leads)}). Tudo que é recorte por canal, público ou criativo enxerga só a parte rastreada — os totais do funil, não.`);
@@ -959,7 +959,7 @@ function renderDiagnostico(c) {
     return dayKey(d);
   };
   days.forEach(ds => buckets.set(bkey(ds), { leads: 0, qualif: 0, vendas: 0 }));
-  c.sdr.forEach(l => { const b = buckets.get(bkey(dayKey(dt(l.created_at)))); if (b) { b.leads++; if (l.qualified) b.qualif++; } });
+  c.ent.forEach(l => { const b = buckets.get(bkey(dayKey(dt(l.created_at)))); if (b) { b.leads++; if (l.qualified) b.qualif++; } });
   c.vend.forEach(l => { const b = buckets.get(bkey(dayKey(dt(l.closed_at)))); if (b) b.vendas++; });
   const bk = [...buckets.keys()];
   $('#diag-daily-sub').textContent = byWeek
@@ -986,7 +986,7 @@ function renderDiagnostico(c) {
 
   /* qualificação por canal */
   const porCanal = new Map();
-  c.sdr.forEach(l => {
+  c.ent.forEach(l => {
     const e = porCanal.get(l.canal) || { n: 0, q: 0, r: 0 };
     e.n++; if (l.qualified) e.q++; if (l.reuniao_realizada) e.r++;
     porCanal.set(l.canal, e);
@@ -1004,10 +1004,10 @@ function renderDiagnostico(c) {
   /* performance do bot de pré-atendimento */
   const tag = (l, t) => (l.tags || []).includes(t);
   const bot = {
-    ok:   c.sdr.filter(l => tag(l, 'bot-concluído')),
-    ruim: c.sdr.filter(l => tag(l, 'bot-incompleto')),
+    ok:   c.ent.filter(l => tag(l, 'bot-concluído')),
+    ruim: c.ent.filter(l => tag(l, 'bot-incompleto')),
   };
-  bot.resto = c.sdr.filter(l => !tag(l, 'bot-concluído') && !tag(l, 'bot-incompleto'));
+  bot.resto = c.ent.filter(l => !tag(l, 'bot-concluído') && !tag(l, 'bot-incompleto'));
   const botRows = [
     { k: 'Bot concluído', v: bot.ok.length, cls: 'lead', label: int(bot.ok.length), fat: pctS(bot.ok.filter(l => l.qualified).length, bot.ok.length) + ' qualif.' },
     { k: 'Bot incompleto', v: bot.ruim.length, cls: 'mut', label: int(bot.ruim.length), fat: pctS(bot.ruim.filter(l => l.qualified).length, bot.ruim.length) + ' qualif.' },
@@ -1024,7 +1024,7 @@ function renderDiagnostico(c) {
   /* eficiência individual — SDR pelo responsável do card, Closer pelo campo Closer */
   const uname = id => (K.users_map[String(id)] || {}).name || 'sem atribuição';
   const porSDR = new Map();
-  c.sdr.forEach(l => {
+  c.ent.forEach(l => {
     const n = uname(l.responsible_user_id);
     const e = porSDR.get(n) || { n: 0, q: 0, a: 0, r: 0 };
     e.n++; if (l.qualified) e.q++; if (l.reuniao_agendada) e.a++; if (l.reuniao_realizada) e.r++;
@@ -1283,7 +1283,7 @@ function answerStats(leads, key) {
 }
 
 function renderPerfil(c) {
-  const base = c.sdr;
+  const base = c.ent;
   const comBot = base.filter(l => BOT_FIELDS.some(f => l[f.key]));
   const comScore = base.filter(l => l.score);
   const ab = comScore.filter(l => l.score === 'A' || l.score === 'B');
@@ -1336,7 +1336,7 @@ function renderPerfil(c) {
   }).join('');
 
   /* públicos e criativos por qualidade (só Meta, que é o que tem gasto) */
-  const meta = c.sdr.filter(l => l.canal === 'Meta Ads');
+  const meta = c.ent.filter(l => l.canal === 'Meta Ads');
   const byKey = (key, spendMap) => {
     const m = new Map();
     meta.forEach(l => {
@@ -1392,7 +1392,7 @@ function renderPerfil(c) {
 /** Busca de leads combinando as respostas do bot. Mantém a seleção entre re-renders. */
 const BUSCA = {};
 function renderBusca(c) {
-  const base = c.sdr;
+  const base = c.ent;
   const campos = BOT_FIELDS.concat([{ key: 'score', label: 'Lead score' }, { key: 'canal', label: 'Canal' }]);
   $('#perfil-filtros').innerHTML = campos.map(f => {
     const vals = [...new Set(base.map(l => l[f.key]).filter(Boolean))].sort();
@@ -1456,12 +1456,12 @@ function lossList(el, sub, leads) {
 
 function renderFunis(c) {
   const tag = (l, t) => (l.tags || []).includes(t);
-  const botOk = c.sdr.filter(l => tag(l, 'bot-concluído')).length;
+  const botOk = c.ent.filter(l => tag(l, 'bot-concluído')).length;
 
   $('#funis-kpis').innerHTML = [
     kpi('Entradas no funil', int(c.leads), c.w.label, 'ink'),
     kpi('Reuniões realizadas', int(c.realiz), `${pctS(c.realiz, c.leads)} das entradas`),
-    kpi('Propostas', int(c.prop), `${pctS(c.prop, c.realiz)} das reuniões`),
+    kpi('Propostas', int(c.prop), `${pctS(c.prop, c.clo.length)} dos cards no Closer`),
     kpi('Vendas', int(c.vendas), `${pctS(c.vendas, c.leads)} das entradas`, 'accent'),
     kpi('Receita', kbrl(c.receita), `ticket ${c.ticket ? brl(c.ticket) : '—'}`)
   ].join('');
@@ -1482,26 +1482,36 @@ function renderFunis(c) {
     ['bot concluído', `${int(botOk)} leads`]
   ]);
 
+  // "Sinal verde + dados de venda" saiu da pirâmide pelo mesmo motivo do bot:
+  // ele conta quem está PARADO hoje nessas etapas, não quem passou por elas.
+  // Card que estava em sinal verde e fechou saiu do status, então o degrau
+  // ficava menor que o de baixo e a pirâmide dizia "133% da etapa anterior".
+  // Como foto do presente ele continua útil, e por isso foi para as taxas.
   const st = n => c.clo.filter(l => l.status === n).length;
   pyramid($('#pyr-closer'), [
     { k: 'Cards no Closer', n: c.clo.length, hint: 'reuniões que viraram negociação' },
     { k: 'Proposta enviada', n: c.prop, hint: 'proposta, follow-up, sinal verde ou dados solicitados' },
-    { k: 'Sinal verde + dados de venda', n: st(S.CLO.VERDE) + st(S.CLO.DADOS) },
-    { k: 'Venda ganha', n: c.vendas, win: 1, hint: 'status 142 do Closer' }
+    { k: 'Venda ganha', n: c.vendas, win: 1, hint: 'status 142 do Closer, por data de fechamento' }
   ]);
   ratesBox($('#rates-closer'), [
     ['proposta → venda', c.txVenda.toFixed(0) + '%'],
     ['card → venda', pctS(c.vendas, c.clo.length)],
+    ['parados em sinal verde/dados', `${int(st(S.CLO.VERDE) + st(S.CLO.DADOS))} cards`],
     ['receita', kbrl(c.receita)]
   ]);
 
+  // Proposta ficou de fora daqui: as quatro primeiras etapas contam leads que
+  // ENTRARAM na janela, e proposta conta card do Closer CRIADO na janela — a
+  // proposta desta semana costuma ser de um lead que chegou semanas atrás. Em
+  // janela curta a razão estourava ("136% da etapa anterior"). A proposta na
+  // safra certa está na pirâmide do Closer, logo acima.
   pyramid($('#pyr-full'), [
     { k: 'Lead', n: c.leads }, { k: 'Qualificado', n: c.qualif },
     { k: 'Reunião agendada', n: c.agend }, { k: 'Reunião realizada', n: c.realiz },
-    { k: 'Proposta', n: c.prop }, { k: 'Venda', n: c.vendas, win: 1 }
+    { k: 'Venda', n: c.vendas, win: 1, hint: 'por data de fechamento' }
   ]);
 
-  lossList($('#loss-sdr'), '#loss-sdr-sub', c.sdr);
+  lossList($('#loss-sdr'), '#loss-sdr-sub', c.ent);
   lossList($('#loss-closer'), '#loss-closer-sub', c.clo.filter(l => l.closed_in_period !== false));
 
   /* Funis da base RD — chegam agregados por etapa e dia (rd_summary), porque
@@ -1553,7 +1563,7 @@ function renderAtividades(c) {
   // cards do Closer. O campo "Closer" do lead usa outra grafia para as mesmas
   // pessoas e criaria linhas duplicadas nesta tabela.
   tasks.forEach(t => { const e = touch(uname(t.responsible)); e.t++; if (t.is_completed) e.d++; });
-  c.sdr.forEach(l => touch(uname(l.responsible_user_id)).leads++);
+  c.ent.forEach(l => touch(uname(l.responsible_user_id)).leads++);
   c.clo.forEach(l => touch(uname(l.responsible_user_id)).leads++);
 
   table($('#ativ-users'),
@@ -1678,7 +1688,7 @@ function renderPerfis(c, tasks, uname) {
 
   /* ── SDRs ── */
   const porSdr = new Map();
-  c.sdr.forEach(l => {
+  c.ent.forEach(l => {
     const n = uname(l.responsible_user_id);
     const e = porSdr.get(n) || { leads: 0, q: 0 };
     e.leads++; if (l.qualified) e.q++;
@@ -1776,7 +1786,7 @@ function renderVendas(c) {
   v.forEach(l => { const e = canais.get(l.canal) || { n: 0, r: 0 }; e.n++; e.r += l.price || 0; canais.set(l.canal, e); });
   $('#vendas-canal').innerHTML = barlist(
     [...canais.entries()].sort((a, b) => b[1].r - a[1].r).map(([k, e]) => {
-      const leads = c.sdr.filter(l => l.canal === k).length;
+      const leads = c.ent.filter(l => l.canal === k).length;
       return { k, v: e.r, dot: canalDot(k), cls: canalDot(k), label: kbrl(e.r),
                fat: `${e.n} venda(s)`, tip: `${k}: ${e.n} venda(s) · ${kbrl(e.r)}${leads ? ` · ${pctS(e.n, leads)} dos ${leads} leads do canal` : ''}` };
     }),
