@@ -109,6 +109,24 @@ button,select,input{font-family:inherit}
 .dlt{font-family:var(--f-mono);font-size:11px;font-weight:700}
 .dlt.up{color:var(--good)}.dlt.down{color:var(--bad)}.dlt.flat{color:var(--mut)}
 
+/* ── KPI com selo de variação e barra de meta (bloco de conversão) ───── */
+/* O selo mora dentro do rótulo, numa linha flex: posicionado absoluto ele
+   atropelava rótulo comprido ("Custo por reunião realizada"). */
+.kpi.bdg .kpi-k{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.kpi-bdg{flex:none;font-family:var(--f-mono);font-size:10px;font-weight:700;letter-spacing:0;
+ text-transform:none;padding:3px 8px;border-radius:999px;white-space:nowrap;margin-top:-3px}
+.kpi-bdg.up{color:var(--good);background:color-mix(in srgb,var(--good) 14%,transparent)}
+.kpi-bdg.down{color:var(--bad);background:color-mix(in srgb,var(--bad) 14%,transparent)}
+.kpi-bdg.flat{color:var(--mut);background:var(--track)}
+.kpi-meta{margin-top:13px}
+.kpi-meta .mtrack{height:5px;border-radius:999px;background:var(--track);overflow:hidden}
+.kpi-meta .mfill{height:100%;border-radius:999px;background:var(--bad);width:var(--w);
+ transition:width .5s cubic-bezier(.2,.8,.2,1)}
+.kpi-meta .mfill.ok{background:var(--good)}
+.kpi-meta .mlab{display:flex;justify-content:space-between;gap:8px;margin-top:7px;
+ font-family:var(--f-mono);font-size:9.5px;font-weight:700;letter-spacing:.05em;color:var(--mut)}
+.kpi-meta .mlab b{color:var(--ink2)}
+
 /* ── filtro de período ──────────────────────────────── */
 .filterbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:24px 0 4px;padding:13px 15px;
  background:var(--surface);border:1px solid var(--line);border-radius:var(--r-sm);box-shadow:var(--shadow)}
@@ -328,6 +346,9 @@ tfoot td{border-top:1px solid var(--line);font-weight:700;color:var(--ink);backg
       </div></div>
       <div class="filterbar" data-period="evol"></div>
       <div class="kpis" id="evol-kpis" style="margin-top:16px"></div>
+      <div class="ch" style="margin-top:26px"><div><h3>Conversão</h3>
+        <div class="sub">Reuniões agendadas → realizadas → propostas → vendas</div></div></div>
+      <div class="kpis" id="evol-conv" style="margin-top:14px"></div>
       <div class="grid" style="margin-top:14px">
         <div class="card span6"><div class="ch"><div><h3>Aquisição</h3><div class="sub">Investimento Meta → leads → CPL</div></div></div>
           <div class="chartbox"><canvas id="ch-aquis"></canvas></div></div>
@@ -585,6 +606,10 @@ function spendIn(map, w, key) {
 
 /* ── seletores de lead ───────────────────────────────────────────────────── */
 const CAMPANHA = new Set(['Meta Ads', 'Google Ads']);
+
+// Metas das taxas do comercial, em %. Alimentam as barras do bloco de Conversão
+// na aba Evolução — mudar aqui muda o dash inteiro.
+const METAS = { agendamento: 40, comparecimento: 65, qualifAgend: 60 };
 const sdrIn    = w => K.entrada.filter(l => inWin(l.created_at, w));
 const closerIn = w => K.closer.filter(l => inWin(l.created_at, w));
 const vendasIn = w => K.closer.filter(l => l.venda && inWin(l.closed_at, w));
@@ -619,6 +644,10 @@ function computeCore(w) {
   const investPago  = invest + investGoogle;
   const leadsPago   = leadsMeta + leadsGoogle;
   const qualifPago  = qualifMeta + qualifGoogle;
+  // Custo por reunião divide por TODAS as reuniões realizadas, não só pelas de
+  // mídia paga — é a agenda inteira que o investimento sustenta. Foge da regra
+  // do CPL, que divide só pelo que o anúncio pagou, então este número é um piso:
+  // reunião de lead orgânico ou não rastreado também entra no divisor.
   const vendPago    = vendMeta.length + vendGoogle.length;
   const receitaPago = receitaMeta + receitaGoogle;
 
@@ -632,6 +661,7 @@ function computeCore(w) {
     investPago, leadsPago, qualifPago, vendasPago: vendPago, receitaPago,
     cpl:  leadsPago  ? investPago / leadsPago  : 0,
     cplq: qualifPago ? investPago / qualifPago : 0,
+    cpr:  realiz ? investPago / realiz : 0,
     cac:  vendPago ? investPago / vendPago : 0,
     ticket: vend.length ? receita / vend.length : 0,
     roas: investPago ? receitaPago / investPago : 0,
@@ -642,6 +672,10 @@ function computeCore(w) {
     txCompar: pct(realiz, agend),
     txProp:   pct(prop, realiz),
     txVenda:  pct(vend.length, prop),
+    // As duas conversões que resumem cada time: o SDR entrega reunião realizada,
+    // o Closer transforma reunião em venda.
+    txSdr:    pct(realiz, sdr.length),
+    txCloser: pct(vend.length, realiz),
     txGlobal: pct(vend.length, sdr.length)
   };
 }
@@ -829,6 +863,9 @@ function buildMethodology() {
     ['Investimento', 'Gasto de <b>mídia paga</b> somado dia a dia dentro da janela: Meta Ads por adset e Google Ads por campanha. O KPI mostra o total e abre a divisão entre os dois no subtítulo.'],
     ['CPL', 'Investimento de mídia paga ÷ leads de <b>Meta + Google</b>. Não divide pelo total de leads, que inclui os não rastreados.', 'CPL = (investimento Meta + Google) ÷ (leads Meta + Google)'],
     ['CPL qualificado', 'O mesmo investimento ÷ os leads de mídia paga que qualificaram.', 'CPLq = investimento pago ÷ qualificados de mídia paga'],
+    ['Custo por reunião', 'Investimento ÷ <b>todas</b> as reuniões realizadas do período. Conta a reunião que aconteceu, não a agendada — o no-show já está descontado, e é por isso que ele fica bem acima do CPL. Diferente do CPL, o divisor não se restringe a mídia paga: reunião de lead orgânico ou não rastreado também entra, então o número é um <b>piso</b> — o custo da reunião que a mídia de fato pagou é maior.', 'CPR = investimento pago ÷ reuniões realizadas'],
+    ['Conversão SDR', 'Fatia dos leads de entrada do período que chegou a <b>reunião realizada</b>. É o resultado do time de SDR de ponta a ponta: qualificar, agendar e fazer comparecer.', 'conversão SDR = reuniões realizadas ÷ leads de entrada'],
+    ['Conversão Closer', 'Fatia das reuniões realizadas que virou <b>venda</b>. Como a venda entra no período pela data de fechamento e a reunião pela data de criação do lead, os dois números são de safras um pouco diferentes — em mês de volume estável a razão é boa, em mês de virada ela é aproximada.', 'conversão Closer = vendas ÷ reuniões realizadas'],
     ['CAC', 'Investimento ÷ vendas cujo lead tem <b>Meta Ads</b> ou <b>Google Ads</b> como origem. É um <b>teto</b>: parte das vendas entrou sem rastreio e está contada como "não rastreado", então o CAC real é menor que o exibido.', 'CAC = investimento pago ÷ vendas com canal Meta ou Google'],
     ['ROAS', 'Receita das vendas atribuídas a mídia paga ÷ investimento. É um <b>piso</b>, pela mesma razão: a receita sem rastreio não entra no numerador.', 'ROAS = receita das vendas pagas ÷ investimento pago'],
     ['Público e criativo', 'Os campos <b>Campanha</b> e <b>Anúncio</b> do contato chegam como slug de UTM e são traduzidos para o mesmo rótulo usado no gasto do Meta — é isso que permite cruzar lead com investimento por público e por peça. Essas duas tabelas cobrem <b>só o Meta</b>; o Google entra nos indicadores de topo, mas ainda não no recorte por público.'],
@@ -871,7 +908,10 @@ function renderDiagnostico(c) {
     kpi('CPL qualificado', c.cplq ? brl(c.cplq) : '—', delta(c.cplq, p.cplq, true)),
     kpi('Reuniões agendadas', int(c.agend), `${pctS(c.agend, c.qualif)} dos qualificados`),
     kpi('Reuniões realizadas', int(c.realiz), `${pctS(c.realiz, c.agend)} de comparecimento`),
+    kpi('Custo por reunião', c.cpr ? brl(c.cpr) : '—', `${int(c.realiz)} reunião(ões) realizada(s) ${delta(c.cpr, p.cpr, true)}`),
+    kpi('Conversão SDR', c.txSdr.toFixed(1).replace('.', ',') + '%', `lead → reunião realizada ${delta(c.txSdr, p.txSdr)}`),
     kpi('Propostas', int(c.prop), `${pctS(c.prop, c.realiz)} das reuniões`),
+    kpi('Conversão Closer', c.txCloser.toFixed(1).replace('.', ',') + '%', `reunião → venda ${delta(c.txCloser, p.txCloser)}`),
     kpi('Vendas', int(c.vendas), `${delta(c.vendas, p.vendas)} vs anterior`, 'accent'),
     kpi('Receita', kbrl(c.receita), `ticket ${c.ticket ? brl(c.ticket) : '—'}`, 'ink'),
     kpi('CAC (teto)', c.cac ? brl(c.cac) : '—', `${int(c.vendasPago)} venda(s) atribuída(s) a mídia paga`),
@@ -1071,7 +1111,45 @@ function weeklySeries(w) {
   return weeks;
 }
 
+/* Bloco de conversão da aba Evolução: volume de reunião, o que ela custa e as
+   três taxas contra a meta. Volume e custo variam em %; taxa varia em pontos
+   percentuais, porque dizer que uma taxa "caiu 15%" confunde 60→51 com 60→45. */
+function renderConversao(c, p) {
+  const selo = (d, pp, invert = false) => {
+    if (d === null || !isFinite(d)) return '';
+    if (Math.abs(d) < (pp ? 0.1 : 0.5)) return '<span class="kpi-bdg flat">estável</span>';
+    const bom = invert ? d < 0 : d > 0;
+    const txt = pp ? `${d > 0 ? '+' : '−'}${Math.abs(d).toFixed(1).replace('.', ',')}pp`
+                   : `${d > 0 ? '+' : '−'}${Math.abs(d).toFixed(0)}%`;
+    return `<span class="kpi-bdg ${bom ? 'up' : 'down'}">${txt}</span>`;
+  };
+  const varPct = (cur, prev) => (prev ? pct(cur - prev, Math.abs(prev)) : null);
+  const card = (k, valor, sel, sub, taxa, meta) => {
+    const bar = taxa === undefined ? '' : `<div class="kpi-meta">
+      <div class="mtrack"><div class="mfill ${taxa >= meta ? 'ok' : ''}" style="--w:${Math.min(100, pct(taxa, meta)).toFixed(1)}%"></div></div>
+      <div class="mlab"><span>0%</span><span>Meta <b>${meta}%</b></span></div></div>`;
+    return `<div class="kpi bdg"><span class="kpi-k"><span>${esc(k)}</span>${sel}</span>
+      <span class="kpi-n">${valor}</span>
+      ${sub ? `<span class="kpi-s">${sub}</span>` : ''}${bar}</div>`;
+  };
+
+  const txAgendLead = pct(c.agend, c.leads), pTxAgendLead = pct(p.agend, p.leads);
+  const um = v => v.toFixed(1).replace('.', ',') + '%';
+
+  $('#evol-conv').innerHTML = [
+    card('Reuniões agendadas', int(c.agend), selo(varPct(c.agend, p.agend), false), `${pctS(c.agend, c.leads)} dos leads do período`),
+    card('Reuniões realizadas', int(c.realiz), selo(varPct(c.realiz, p.realiz), false), `${pctS(c.realiz, c.agend)} das agendadas`),
+    card('Custo por reunião realizada', c.cpr ? brl(c.cpr) : '—', selo(varPct(c.cpr, p.cpr), false, true), 'investimento ÷ realizadas'),
+    card('Tx. agendamento', um(txAgendLead), selo(txAgendLead - pTxAgendLead, true), 'agendadas ÷ leads', txAgendLead, METAS.agendamento),
+    card('Tx. comparecimento', um(c.txCompar), selo(c.txCompar - p.txCompar, true), 'realizadas ÷ agendadas', c.txCompar, METAS.comparecimento),
+    card('Qualif → agendado', um(c.txAgend), selo(c.txAgend - p.txAgend, true), 'agendadas ÷ qualificados', c.txAgend, METAS.qualifAgend)
+  ].join('');
+}
+
 function renderEvolucao(c) {
+  const pw = prevWindow(c.w);
+  const p  = computeCore(Object.assign({}, pw, { label: '', partial: false }));
+  renderConversao(c, p);
   const wk = weeklySeries(c.w);
   const L = wk.map(k => k.label);
   const semanaTop = wk.slice().sort((a, b) => b.leads - a.leads)[0];
