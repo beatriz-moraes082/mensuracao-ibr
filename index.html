@@ -127,6 +127,14 @@ button,select,input{font-family:inherit}
  font-family:var(--f-mono);font-size:9.5px;font-weight:700;letter-spacing:.05em;color:var(--mut)}
 .kpi-meta .mlab b{color:var(--ink2)}
 
+/* ── grupos da faixa de KPI ─────────────────────────── */
+.kgrp + .kgrp{margin-top:24px}
+/* auto-fill, não auto-fit: o grupo de taxas tem dois cards e com auto-fit eles
+   esticariam para a largura toda, saindo maiores que os dos outros grupos. */
+.kgrp .kpis{grid-template-columns:repeat(auto-fill,minmax(168px,1fr))}
+.kgrp-t{display:block;font-family:var(--f-mono);font-size:10px;font-weight:700;letter-spacing:.11em;
+ text-transform:uppercase;color:var(--mut);margin-bottom:12px;padding-bottom:9px;border-bottom:1px solid var(--line2)}
+
 /* ── filtro de período ──────────────────────────────── */
 .filterbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:24px 0 4px;padding:13px 15px;
  background:var(--surface);border:1px solid var(--line);border-radius:var(--r-sm);box-shadow:var(--shadow)}
@@ -319,7 +327,7 @@ tfoot td{border-top:1px solid var(--line);font-weight:700;color:var(--ink);backg
     <div class="sec" style="padding-top:34px">
       <div class="filterbar" data-period="diag"></div>
       <div id="diag-warn"></div>
-      <div class="kpis" id="diag-kpis" style="margin-top:16px"></div>
+      <div id="diag-kpis" style="margin-top:16px"></div>
       <div class="grid" style="margin-top:14px">
         <div class="card span12"><div class="ch"><div><h3>Evolução diária</h3><div class="sub" id="diag-daily-sub">Leads, qualificados e vendas por dia</div></div></div>
           <div class="chartbox tall"><canvas id="ch-daily"></canvas></div></div>
@@ -900,22 +908,33 @@ function renderDiagnostico(c) {
   const pw = prevWindow(c.w);
   const p  = computeCore(Object.assign({}, pw, { label: '', partial: false }));
 
+  // A faixa vai em três grupos: quanto entrou e andou no funil, com que taxa
+  // andou, e quanto isso custou. Quinze KPIs em fila única não se leem.
+  const grupo = (titulo, cards) =>
+    `<div class="kgrp"><span class="kgrp-t">${titulo}</span><div class="kpis">${cards.join('')}</div></div>`;
+
   $('#diag-kpis').innerHTML = [
-    kpi('Leads', int(c.leads), `${delta(c.leads, p.leads)} vs período anterior`, 'ink'),
-    kpi('Investimento', kbrl(c.investPago), `${kbrl(c.invest)} Meta · ${kbrl(c.investGoogle)} Google ${delta(c.investPago, p.investPago)}`),
-    kpi('CPL', c.cpl ? brl(c.cpl) : '—', `${int(c.leadsPago)} leads de mídia paga ${delta(c.cpl, p.cpl, true)}`),
-    kpi('Qualificados', int(c.qualif), `${c.txQualif.toFixed(0)}% dos leads ${delta(c.txQualif, p.txQualif)}`, 'accent'),
-    kpi('CPL qualificado', c.cplq ? brl(c.cplq) : '—', delta(c.cplq, p.cplq, true)),
-    kpi('Reuniões agendadas', int(c.agend), `${pctS(c.agend, c.qualif)} dos qualificados`),
-    kpi('Reuniões realizadas', int(c.realiz), `${pctS(c.realiz, c.agend)} de comparecimento`),
-    kpi('Custo por reunião', c.cpr ? brl(c.cpr) : '—', `${int(c.realiz)} reunião(ões) realizada(s) ${delta(c.cpr, p.cpr, true)}`),
-    kpi('Conversão SDR', c.txSdr.toFixed(1).replace('.', ',') + '%', `lead → reunião realizada ${delta(c.txSdr, p.txSdr)}`),
-    kpi('Propostas', int(c.prop), `${pctS(c.prop, c.realiz)} das reuniões`),
-    kpi('Conversão Closer', c.txCloser.toFixed(1).replace('.', ',') + '%', `reunião → venda ${delta(c.txCloser, p.txCloser)}`),
-    kpi('Vendas', int(c.vendas), `${delta(c.vendas, p.vendas)} vs anterior`, 'accent'),
-    kpi('Receita', kbrl(c.receita), `ticket ${c.ticket ? brl(c.ticket) : '—'}`, 'ink'),
-    kpi('CAC (teto)', c.cac ? brl(c.cac) : '—', `${int(c.vendasPago)} venda(s) atribuída(s) a mídia paga`),
-    kpi('ROAS (piso)', c.roas ? c.roas.toFixed(1).replace('.', ',') + 'x' : '—', `${kbrl(c.receitaPago)} de receita rastreada`)
+    grupo('Volumetria · operação', [
+      kpi('Leads', int(c.leads), `${delta(c.leads, p.leads)} vs período anterior`, 'ink'),
+      kpi('Qualificados', int(c.qualif), `${c.txQualif.toFixed(0)}% dos leads ${delta(c.txQualif, p.txQualif)}`, 'accent'),
+      kpi('Reuniões agendadas', int(c.agend), `${pctS(c.agend, c.qualif)} dos qualificados`),
+      kpi('Reuniões realizadas', int(c.realiz), `${pctS(c.realiz, c.agend)} de comparecimento`),
+      kpi('Propostas', int(c.prop), `${pctS(c.prop, c.realiz)} das reuniões`),
+      kpi('Vendas', int(c.vendas), `${delta(c.vendas, p.vendas)} vs anterior`, 'accent')
+    ]),
+    grupo('Taxas de conversão', [
+      kpi('Conversão SDR', c.txSdr.toFixed(1).replace('.', ',') + '%', `lead → reunião realizada ${delta(c.txSdr, p.txSdr)}`),
+      kpi('Conversão Closer', c.txCloser.toFixed(1).replace('.', ',') + '%', `reunião → venda ${delta(c.txCloser, p.txCloser)}`)
+    ]),
+    grupo('Eficiência financeira', [
+      kpi('Investimento', kbrl(c.investPago), `${kbrl(c.invest)} Meta · ${kbrl(c.investGoogle)} Google ${delta(c.investPago, p.investPago)}`),
+      kpi('CPL', c.cpl ? brl(c.cpl) : '—', `${int(c.leadsPago)} leads de mídia paga ${delta(c.cpl, p.cpl, true)}`),
+      kpi('CPL qualificado', c.cplq ? brl(c.cplq) : '—', delta(c.cplq, p.cplq, true)),
+      kpi('Custo por reunião', c.cpr ? brl(c.cpr) : '—', `${int(c.realiz)} reunião(ões) realizada(s) ${delta(c.cpr, p.cpr, true)}`),
+      kpi('Receita', kbrl(c.receita), `ticket ${c.ticket ? brl(c.ticket) : '—'}`, 'ink'),
+      kpi('CAC (teto)', c.cac ? brl(c.cac) : '—', `${int(c.vendasPago)} venda(s) atribuída(s) a mídia paga`),
+      kpi('ROAS (piso)', c.roas ? c.roas.toFixed(1).replace('.', ',') + 'x' : '—', `${kbrl(c.receitaPago)} de receita rastreada`)
+    ])
   ].join('');
 
   /* avisos de qualidade de dado — sem isso o resto do dashboard engana */
