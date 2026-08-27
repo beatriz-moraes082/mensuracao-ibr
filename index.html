@@ -632,6 +632,7 @@ function computeCore(w) {
   const realiz = ent.filter(l => l.reuniao_realizada).length;
   const prop   = clo.filter(l => l.proposta || PROPOSTA_STAGES.includes(l.status)).length;
   const receita = vend.reduce((s, l) => s + (l.price || 0), 0);
+  const vendComValor = vend.filter(l => (l.price || 0) > 0).length;
   const leadsMeta = ent.filter(l => l.canal === 'Meta Ads').length;
   const qualifMeta = ent.filter(l => l.canal === 'Meta Ads' && l.qualified).length;
   // CAC e ROAS só fazem sentido comparando o investimento com o que aquele
@@ -671,7 +672,12 @@ function computeCore(w) {
     cplq: qualifPago ? investPago / qualifPago : 0,
     cpr:  realiz ? investPago / realiz : 0,
     cac:  vendPago ? investPago / vendPago : 0,
-    ticket: vend.length ? receita / vend.length : 0,
+    // Ticket médio divide só pelas vendas que têm valor no CRM. Venda ganha com
+    // preço em branco é negócio real, e por isso continua contada em Vendas e
+    // Receita — mas somá-la ao divisor rebaixaria o ticket como se ela tivesse
+    // sido fechada a zero. O aviso do Diagnóstico diz quantas estão assim.
+    vendasSemValor: vend.length - vendComValor,
+    ticket: vendComValor ? receita / vendComValor : 0,
     roas: investPago ? receitaPago / investPago : 0,
     cplMeta:   leadsMeta   ? invest / leadsMeta : 0,
     cplGoogle: leadsGoogle ? investGoogle / leadsGoogle : 0,
@@ -818,7 +824,18 @@ async function boot() {
   // nasce. O Closer fica de fora de propósito — é etapa de avanço e recria o
   // lead com outro id, então somá-lo dupla-contaria quem já está no SDR (hoje
   // 393 dos 430 cards do Closer repetem um dkey da base de entrada).
-  K.entrada = [...K.sdr, ...K.nutricao];
+  // O card do SDR é a entrada de verdade: no Kommo, entrada de lead e reunião
+  // agendada/realizada vivem no funil SDR. O card de Nutrição de quem já tem
+  // card no SDR é continuação da mesma pessoa, não uma segunda entrada — só
+  // conta quando aquele telefone nunca apareceu no SDR. A dedup da coleta roda
+  // dentro do SDR e não enxergava o outro funil.
+  const jaVistos = new Set(K.sdr.map(l => l.dkey).filter(Boolean));
+  K.entrada = [...K.sdr];
+  for (const l of K.nutricao) {
+    if (l.dkey && jaVistos.has(l.dkey)) continue;
+    if (l.dkey) jaVistos.add(l.dkey);
+    K.entrada.push(l);
+  }
   // Primeiro card de cada pessoa na entrada, indexado pelo dkey (hash do
   // telefone). É o que permite ao ciclo de vendas contar desde a chegada do
   // lead: o card do Closer nasce no avanço, então medir por ele daria zero dia
@@ -860,7 +877,7 @@ async function boot() {
 
 function buildMethodology() {
   const defs = [
-    ['Lead', 'Cada negócio criado nos funis de entrada — <b>SDR</b> e <b>Nutrição</b> — dentro da janela. O funil <b>Closer</b> não entra: ele é etapa de avanço e recria o mesmo lead com outro id, então somá-lo contaria a mesma pessoa duas vezes. Duplicidades pelo mesmo telefone são removidas na coleta — a mesma pessoa reentrando pelo anúncio conta uma vez.'],
+    ['Lead', 'Cada negócio criado nos funis de entrada — <b>SDR</b> e <b>Nutrição</b> — dentro da janela. O funil <b>Closer</b> não entra: ele é etapa de avanço e recria o mesmo lead com outro id, então somá-lo contaria a mesma pessoa duas vezes. Duplicidades pelo mesmo telefone são removidas dentro do SDR na coleta e também entre os dois funis — quem tem card no SDR e outro na Nutrição conta uma vez, pelo card do SDR, que é onde a entrada acontece.'],
     ['Canal', 'Vem do campo <b>Origem</b> do contato, normalizado: Meta+Ads/Facebook/Instagram → Meta Ads; google → Google Ads; vazio, "unknown" ou lixo → Não rastreado.'],
     ['Lead qualificado', 'Lead que chegou às etapas <b>Lead qualificado</b>, <b>Reunião agendada</b> ou <b>Reunião realizada</b>, ou que tem tag de reunião. Quem agendou passou pela qualificação, mesmo que o card tenha voltado de etapa.'],
     ['Reunião realizada', 'Status <b>142 do funil SDR</b> (que ali se chama "Reunião realizada") ou tag <code>reunião-realizada</code>.'],
@@ -945,6 +962,8 @@ function renderDiagnostico(c) {
     avisos.push(`<b>${pctS(semCanal, c.leads)} dos leads do período estão sem canal</b> no CRM (${int(semCanal)} de ${int(c.leads)}). Tudo que é recorte por canal, público ou criativo enxerga só a parte rastreada — os totais do funil, não.`);
   if (gads && !(G && G.campaign))
     avisos.push(`<b>Investimento do Google indisponível.</b> Os ${int(gads)} leads de Google entram no volume e no funil, mas sem o gasto dele o CPL, o CAC e o ROAS olham só o Meta.`);
+  if (c.vendasSemValor)
+    avisos.push(`<b>${int(c.vendasSemValor)} de ${int(c.vendas)} venda(s) do período estão sem valor no CRM.</b> Elas contam em Vendas, mas não entram na Receita nem no ticket médio — o faturamento do período é maior que o exibido.`);
   const apagao = c.w.from <= new Date(2026, 6, 10) && c.w.to >= new Date(2026, 5, 17);
   if (apagao)
     avisos.push(`<b>Apagão de rastreio entre 17/06 e 10/07/2026:</b> nesse intervalo os leads entraram sem UTM. Comparar junho e julho com agosto em canal/público/criativo mede o rastreio, não a mídia.`);
@@ -1773,7 +1792,8 @@ function renderVendas(c) {
   $('#vendas-kpis').innerHTML = [
     kpi('Vendas ganhas', int(v.length), c.w.label, 'accent'),
     kpi('Receita', kbrl(c.receita), `${int(v.length)} negócio(s)`, 'ink'),
-    kpi('Ticket médio', c.ticket ? brl(c.ticket) : '—', maior ? `maior venda ${kbrl(maior)}` : ''),
+    kpi('Ticket médio', c.ticket ? brl(c.ticket) : '—',
+        [maior ? `maior venda ${kbrl(maior)}` : '', c.vendasSemValor ? `${int(c.vendasSemValor)} venda(s) sem valor fora da média` : ''].filter(Boolean).join(' · ')),
     kpi('Ciclo mediano', ciclos.length ? mediana(ciclos).toFixed(1).replace('.', ',') : '—',
         ciclos.length ? `do 1º card do lead ao fechamento${semEntrada ? ` · ${int(semEntrada)} sem card no SDR, contada do Closer` : ''}`
                       : 'dias entre o 1º card do lead e o fechamento',

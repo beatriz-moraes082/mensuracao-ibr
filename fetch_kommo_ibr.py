@@ -589,15 +589,24 @@ def main():
     print(f"  Públicos: {dict(Counter(l['audience'] for l in deduped_sdr if l['audience'] != '—').most_common(8))}")
     print(f"  Criativos: {dict(Counter(l['creative'] for l in deduped_sdr if l['creative'] != '—').most_common(8))}")
 
-    # Dedup de vendas: mesmo contato fechado no mesmo dia = 1 venda
+    # Dedup de vendas: mesma pessoa, mesmo dia, mesmo produto e mesmo valor.
+    #
+    # A chave era (contato, dia), e errava dos dois lados. Errava por falta
+    # porque usava contact_id: quem tem dois cadastros de contato com o mesmo
+    # telefone passava batido — e o resto do dash casa pessoa por telefone, não
+    # por contato. E errava por excesso porque duas unidades vendidas para a
+    # mesma pessoa no mesmo dia são dois negócios reais, não duplicata; incluir
+    # produto e valor na chave preserva esse caso e ainda pega a duplicata de
+    # verdade, que é o mesmo negócio cadastrado duas vezes.
     closer_id_to_contact = {l["id"]: lead_contact_id(l) for l in leads_closer_all}
     seen_venda_keys, venda_dups = set(), 0
     for l in processed_closer:
         if not l["venda"]: continue
         cid = closer_id_to_contact.get(l["id"], 0)
+        pessoa = l.get("dkey") or (f"cid:{cid}" if cid else "")
         closed_day = datetime.fromtimestamp(l["closed_at"]).strftime("%Y-%m-%d") if l["closed_at"] else ""
-        key = (cid, closed_day)
-        if cid and key in seen_venda_keys:
+        key = (pessoa, closed_day, l.get("price", 0), l.get("produto", ""))
+        if pessoa and key in seen_venda_keys:
             l["venda"] = False; l["duplicated"] = True; venda_dups += 1
         else:
             seen_venda_keys.add(key); l["duplicated"] = False
