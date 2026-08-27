@@ -347,7 +347,7 @@ tfoot td{border-top:1px solid var(--line);font-weight:700;color:var(--ink);backg
       <div class="filterbar" data-period="evol"></div>
       <div class="kpis" id="evol-kpis" style="margin-top:16px"></div>
       <div class="ch" style="margin-top:26px"><div><h3>Conversão</h3>
-        <div class="sub">Reuniões agendadas → realizadas → propostas → vendas</div></div></div>
+        <div class="sub">Qualificado → reunião agendada → reunião realizada</div></div></div>
       <div class="kpis" id="evol-conv" style="margin-top:14px"></div>
       <div class="grid" style="margin-top:14px">
         <div class="card span6"><div class="ch"><div><h3>Aquisição</h3><div class="sub">Investimento Meta → leads → CPL</div></div></div>
@@ -1137,12 +1137,12 @@ function renderConversao(c, p) {
   const um = v => v.toFixed(1).replace('.', ',') + '%';
 
   $('#evol-conv').innerHTML = [
+    card('Qualif → agendado', um(c.txAgend), selo(c.txAgend - p.txAgend, true), 'agendadas ÷ qualificados', c.txAgend, METAS.qualifAgend),
+    card('Tx. agendamento', um(txAgendLead), selo(txAgendLead - pTxAgendLead, true), 'agendadas ÷ leads', txAgendLead, METAS.agendamento),
     card('Reuniões agendadas', int(c.agend), selo(varPct(c.agend, p.agend), false), `${pctS(c.agend, c.leads)} dos leads do período`),
     card('Reuniões realizadas', int(c.realiz), selo(varPct(c.realiz, p.realiz), false), `${pctS(c.realiz, c.agend)} das agendadas`),
-    card('Custo por reunião realizada', c.cpr ? brl(c.cpr) : '—', selo(varPct(c.cpr, p.cpr), false, true), 'investimento ÷ realizadas'),
-    card('Tx. agendamento', um(txAgendLead), selo(txAgendLead - pTxAgendLead, true), 'agendadas ÷ leads', txAgendLead, METAS.agendamento),
     card('Tx. comparecimento', um(c.txCompar), selo(c.txCompar - p.txCompar, true), 'realizadas ÷ agendadas', c.txCompar, METAS.comparecimento),
-    card('Qualif → agendado', um(c.txAgend), selo(c.txAgend - p.txAgend, true), 'agendadas ÷ qualificados', c.txAgend, METAS.qualifAgend)
+    card('Custo por reunião realizada', c.cpr ? brl(c.cpr) : '—', selo(varPct(c.cpr, p.cpr), false, true), 'investimento ÷ realizadas')
   ].join('');
 }
 
