@@ -251,6 +251,32 @@ tbody.cgrp td.ind::before{content:'';position:absolute;left:15px;top:0;bottom:0;
 .calcout{margin-top:20px;border:1px solid color-mix(in srgb,var(--accent) 20%,var(--line));border-radius:var(--r);padding:22px;background:var(--tint)}
 .calcout .big{font-family:var(--f-disp);font-size:54px;font-weight:700;letter-spacing:-.035em;line-height:1;color:var(--accent)}
 
+/* ── chips de campanha + ranking top 3 ──────────────── */
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin:2px 0 18px}
+.rk-h{font-family:var(--f-disp);font-size:15px;font-weight:700;letter-spacing:-.01em;color:var(--ink)}
+.chip{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);background:var(--surface);
+ color:var(--ink2);padding:7px 15px;border-radius:999px;font-size:12px;font-weight:600;cursor:pointer;
+ transition:.15s;white-space:nowrap;font-family:inherit}
+.chip:hover{border-color:var(--accent);color:var(--ink)}
+.chip .n{font-family:var(--f-mono);font-size:11px;font-weight:700;color:var(--mut)}
+.chip.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.chip.on .n{color:rgba(255,255,255,.7)}
+.ranklist{display:flex;flex-direction:column;gap:17px}
+.rk-top{display:flex;align-items:baseline;justify-content:space-between;gap:14px}
+.rk-lab{display:flex;align-items:center;gap:7px;min-width:0;flex:1 1 auto;font-size:13px;font-weight:700;color:var(--ink)}
+.rk-lab .tag,.rk-lab .eye{flex:none}
+.rk-i{flex:none;font-family:var(--f-mono);font-size:12px;font-weight:700;color:var(--mut)}
+.rk.p1 .rk-i{color:var(--accent)}
+.rk-nm{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rk-meta{flex:none;font-family:var(--f-mono);font-size:11.5px;font-weight:600;color:var(--mut);white-space:nowrap}
+.rk-meta b{color:var(--ink);font-weight:700}
+.rk-track{height:8px;margin-top:9px;border-radius:999px;background:var(--track);overflow:hidden}
+.rk-fill{height:100%;border-radius:999px;background:var(--accent)}
+.eye{border:none;background:color-mix(in srgb,var(--accent) 15%,transparent);color:var(--accent);border-radius:8px;
+ padding:2px 8px;font-size:11px;line-height:1.5;cursor:pointer;font-family:inherit}
+.eye:hover{background:color-mix(in srgb,var(--accent) 28%,transparent)}
+.cri-frame{width:100%;height:min(70vh,620px);border:1px solid var(--line);border-radius:var(--r-sm);background:var(--track)}
+
 /* ── modal ──────────────────────────────────────────── */
 .modal{position:fixed;inset:0;z-index:100;display:none;place-items:center;padding:20px}
 .modal.open{display:grid}
@@ -398,6 +424,16 @@ tbody.cgrp td.ind::before{content:'';position:absolute;left:15px;top:0;bottom:0;
           <div id="perfil-score-insight"></div></div>
         <div class="card span12"><div class="ch"><div><h3>Respostas do pré-atendimento</h3><div class="sub" id="perfil-bot-sub">Distribuição das respostas e taxa de qualificação de cada uma</div></div></div>
           <div class="grid" id="perfil-bot" style="gap:14px"></div></div>
+        <div class="card span12"><div class="ch"><div><h3>Top públicos e criativos por campanha</h3><div class="sub">Escolha a campanha que vai otimizar — os dois rankings recalculam só com os leads dela</div></div></div>
+          <div class="chips" id="perfil-top-chips"></div>
+          <div class="grid" style="gap:22px">
+            <div class="span6"><div class="rk-h">Top 3 públicos por Score A+B</div>
+              <div class="sub" id="perfil-top-aud-sub" style="margin:3px 0 18px"></div>
+              <div id="perfil-top-aud"></div></div>
+            <div class="span6"><div class="rk-h">Top 3 criativos por Score A+B</div>
+              <div class="sub" id="perfil-top-cri-sub" style="margin:3px 0 18px"></div>
+              <div id="perfil-top-cri"></div></div>
+          </div></div>
         <div class="card span12"><div class="ch"><div><h3>Públicos por campanha</h3><div class="sub">Leads, taxa de qualificação e CPL qualificado — agrupados pela campanha que se pausa ou escala</div></div></div>
           <div class="tblwrap" style="border:none;box-shadow:none"><table id="perfil-aud"></table></div>
           <div id="perfil-aud-note"></div></div>
@@ -513,6 +549,18 @@ tbody.cgrp td.ind::before{content:'';position:absolute;left:15px;top:0;bottom:0;
   </footer>
 </main>
 
+<div class="modal" id="criModal">
+  <div class="modal-bd" data-close></div>
+  <div class="modal-p">
+    <div class="modal-h"><div><div class="modal-k">Anúncio no Meta</div><h3 id="cri-nome">—</h3></div>
+      <button class="modal-x" data-close>✕</button></div>
+    <div class="modal-b">
+      <iframe class="cri-frame" id="cri-frame" src="about:blank" title="Preview do anúncio"></iframe>
+      <div class="note" id="cri-link"></div>
+    </div>
+  </div>
+</div>
+
 <div class="modal" id="methModal">
   <div class="modal-bd" data-close></div>
   <div class="modal-p">
@@ -626,8 +674,43 @@ const SEM_CAMPANHA = 'Sem campanha identificada';
  * depois da campanha pausar) cai no dia com gasto mais próximo: a campanha não
  * muda de um dia para o outro, então o vizinho responde certo.
  */
+const _UTM_VAZIO = /^(unknown|not[_ ]?set|notset|none|null|\(.*\)|\{\{.*\}\})$/i;
+// Tokens que aparecem em toda campanha da conta e não distinguem uma da outra.
+const _UTM_FILLER = new Set(['ibr', 'max', 'conv', 'br', 'ads', 'tp', 'lp', '']);
+
+/** Slug de utm_campaign → rótulo curto. Só para canais fora do Meta.
+ *
+ * No Google o utm_campaign traz mesmo o nome da campanha
+ * ('ibr_discovery_max_conv_br_01_institucional_2023_08_28'), então aqui ele
+ * serve — o que não serve é no Meta, onde metade vem com o nome do adset.
+ */
+function rotuloCampanhaUTM(raw) {
+  let t = String(raw || '').replace(/\+/g, ' ').trim();
+  if (!t || _UTM_VAZIO.test(t)) return SEM_CAMPANHA;
+  t = t.replace(/^campanha:\s*/i, '');
+  // Nome com pipes ('Fundo de Funil | Leads | IBR | 13/07/2026') já é legível:
+  // segue a mesma limpeza do lado Python, para os dois baterem.
+  if (t.includes('|')) {
+    const partes = t.split('|').map(x => x.trim().replace(/[\[\]]/g, '').trim())
+      .filter(x => x && !/^\d{1,2}$/.test(x) && !/^\d{2}[-/]\d{2}[-/]\d{2,4}$/.test(x) &&
+                   !/^\d{4}-\d{2}-\d{2}$/.test(x) && !_UTM_FILLER.has(x.toLowerCase()));
+    return partes.length ? partes.join(' · ') : SEM_CAMPANHA;
+  }
+  const toks = t.replace(/^p[uú]blico[-_]/i, '')                   // mesmo corte do lado Python
+                .replace(/[-_]?\d{4}[-_]\d{2}[-_]\d{2}$/, '')   // data no fim
+                .replace(/[-_]\d{2}[-_]\d{2}([-_]tp)?$/, '')      // '-12-08-tp'
+                .split(/[-_\s]+/)
+                .filter(x => x && !_UTM_FILLER.has(x.toLowerCase()) && !/^\d{1,2}$/.test(x));
+  if (!toks.length) return SEM_CAMPANHA;
+  const nome = toks.map(x => x.charAt(0).toUpperCase() + x.slice(1)).join(' · ');
+  return nome.length > 32 ? nome.slice(0, 31) + '…' : nome;
+}
+
 const _campCache = new Map();
 function campanhaDoLead(l) {
+  // Fora do Meta não existe mapa adset→campanha; ali o utm_campaign é a única
+  // fonte — e, diferente do Meta, é uma fonte honesta.
+  if (l.canal !== 'Meta Ads') return rotuloCampanhaUTM(l.campaign);
   const mapa = M && M.audience_campaign && M.audience_campaign[l.audience];
   if (!mapa || !l.created_at) return SEM_CAMPANHA;
   const dia = dayKey(dt(l.created_at));
@@ -915,10 +998,16 @@ async function boot() {
 })();
 
 (function modalInit() {
-  const mod = $('#methModal');
+  const mod = $('#methModal'), cri = $('#criModal');
+  // Zera o src ao fechar: sem isso o vídeo do preview continua tocando atrás.
+  const fecharCri = () => { cri.classList.remove('open'); $('#cri-frame').src = 'about:blank'; };
   $('#methBtn').onclick = () => mod.classList.add('open');
   $$('[data-close]', mod).forEach(b => b.onclick = () => mod.classList.remove('open'));
-  addEventListener('keydown', e => { if (e.key === 'Escape') mod.classList.remove('open'); });
+  $$('[data-close]', cri).forEach(b => b.onclick = fecharCri);
+  addEventListener('keydown', e => {
+    if (e.key !== 'Escape') return;
+    mod.classList.remove('open'); fecharCri();
+  });
 })();
 
 function buildMethodology() {
@@ -1402,6 +1491,8 @@ function renderPerfil(c) {
       }))) + '</div>';
   }).join('');
 
+  renderPerfilTop(c);
+
   /* públicos e criativos por CAMPANHA (só Meta, que é o que tem gasto).
      A campanha é o nível em que a otimização acontece — é ela que se pausa,
      se escala e se realoca. Somada, uma peça que roda em seis campanhas vira
@@ -1513,6 +1604,110 @@ function renderPerfil(c) {
     : '<div class="empty">sem respostas suficientes no período</div>';
 
   renderBusca(c);
+}
+
+/* ── Top 3 públicos · Top 3 criativos, segmentados por campanha ────────────
+   Os dois blocos acima medem dinheiro (CPL, CAC). Este mede QUALIDADE: quem
+   traz lead que o Kommo pontua A ou B. São perguntas diferentes e a resposta
+   costuma divergir — a peça mais barata raramente é a que traz o melhor lead.
+   O gestor otimiza uma campanha por vez, então o chip filtra os dois rankings
+   pelos leads dela em vez de obrigar a ler tudo junto. */
+const TOP_MIN_LEADS = 5;
+const TODAS_CAMP = '__todas__';
+let CAMP_SEL = TODAS_CAMP;
+
+const statusDe = (mapa, k) => (mapa && mapa[k]) || null;
+function statusTagMeta(st) {
+  if (!st) return '';
+  if (st === 'ACTIVE') return '<span class="tag good">● ativo</span>';
+  const lbl = { PAUSED: 'pausado', ARCHIVED: 'arquivado', DELETED: 'excluído',
+                CAMPAIGN_PAUSED: 'campanha pausada', ADSET_PAUSED: 'conjunto pausado' }[st];
+  return `<span class="tag">○ ${esc(lbl || String(st).toLowerCase())}</span>`;
+}
+function olhoCriativo(k) {
+  const tem = M && ((M.creative_preview_iframe && M.creative_preview_iframe[k]) ||
+                    (M.creative_preview && M.creative_preview[k]));
+  return tem ? `<button class="eye" data-cri="${esc(k)}" title="Ver o anúncio">👁</button>` : '';
+}
+
+function renderPerfilTop(c) {
+  const base = c.ent.map(l => Object.assign({}, l, { _camp: campanhaDoLead(l) }));
+
+  // Campanha vira chip a partir de 10 leads no período; abaixo disso o ranking
+  // sairia de uma amostra que não sustenta percentual.
+  const cont = new Map();
+  base.forEach(l => cont.set(l._camp, (cont.get(l._camp) || 0) + 1));
+  const chips = [...cont.entries()].filter(([, n]) => n >= 10).sort((a, b) => b[1] - a[1]);
+  if (!chips.some(([k]) => k === CAMP_SEL)) CAMP_SEL = TODAS_CAMP;
+
+  const todas = CAMP_SEL === TODAS_CAMP;
+  const rows = todas ? base : base.filter(l => l._camp === CAMP_SEL);
+
+  $('#perfil-top-chips').innerHTML = [[TODAS_CAMP, base.length], ...chips].map(([k, n]) =>
+    `<button class="chip${k === CAMP_SEL ? ' on' : ''}" data-camp="${esc(k)}">${k === TODAS_CAMP ? 'Todas' : esc(k)}<span class="n">${int(n)}</span></button>`).join('');
+  $$('#perfil-top-chips .chip').forEach(b => b.onclick = () => { CAMP_SEL = b.dataset.camp; renderPerfilTop(c); });
+
+  const rank = (key) => {
+    const m = new Map();
+    rows.forEach(l => {
+      const k = l[key]; if (!k || k === '—') return;
+      const e = m.get(k) || { k, n: 0, ab: 0, meta: 0, camp: new Map() };
+      e.n++; if (l.score === 'A' || l.score === 'B') e.ab++;
+      if (l.canal === 'Meta Ads') e.meta++;
+      e.camp.set(l._camp, (e.camp.get(l._camp) || 0) + 1);
+      m.set(k, e);
+    });
+    return [...m.values()].filter(e => e.n >= TOP_MIN_LEADS)
+      .map(e => Object.assign(e, { pct: 100 * e.ab / e.n,
+        dom: [...e.camp.entries()].sort((a, b) => b[1] - a[1])[0][0] }))
+      .sort((a, b) => b.pct - a.pct).slice(0, 3);
+  };
+
+  // A barra mede o A+B ABSOLUTO, não o percentual pelo qual a lista é ordenada:
+  // o 1º lugar pode ter a melhor taxa numa amostra pequena, e a barra curta ao
+  // lado da taxa alta é justamente o aviso de que ali há pouco volume.
+  const lista = (itens, enfeite, vazio) => {
+    if (!itens.length) return `<div class="empty">${vazio}</div>`;
+    const max = Math.max(...itens.map(i => i.ab), 1);
+    return '<div class="ranklist">' + itens.map((r, i) => `
+      <div class="rk p${i + 1}">
+        <div class="rk-top">
+          <div class="rk-lab"><span class="rk-i">${i + 1}.</span><span class="rk-nm">${esc(r.k)}</span>${enfeite(r)}${todas ? `<span class="tag">${esc(r.dom)}</span>` : ''}</div>
+          <div class="rk-meta"><b>${int(r.ab)}</b> A+B · <b>${r.pct.toFixed(0)}%</b> · ${int(r.n)} leads</div>
+        </div>
+        <div class="rk-track"><div class="rk-fill" style="width:${(100 * r.ab / max).toFixed(0)}%"></div></div>
+      </div>`).join('') + '</div>';
+  };
+
+  // Selo de status e preview são artefatos do Meta. Um rótulo de público pode
+  // chegar aqui vindo do Google — 'Remarketing' casa com o 'rmkt' do slug da
+  // campanha do Discovery —, e nesse caso pendurar o "ativo" do adset do Meta
+  // descreveria outra coisa. Só enfeita a linha que é majoritariamente Meta.
+  const ehMeta = r => r.meta * 2 >= r.n;
+  const nome = todas ? 'todas as campanhas' : CAMP_SEL;
+  $('#perfil-top-aud').innerHTML = lista(rank('audience'),
+    r => ehMeta(r) ? statusTagMeta(statusDe(M && M.adset_status, r.k)) : '',
+    `Sem amostra suficiente em ${esc(nome)} — são precisos ${TOP_MIN_LEADS} leads por público.`);
+  $('#perfil-top-cri').innerHTML = lista(rank('creative'),
+    r => ehMeta(r) ? statusTagMeta(statusDe(M && M.creative_status, r.k)) + olhoCriativo(r.k) : '',
+    `Sem amostra suficiente em ${esc(nome)} — são precisos ${TOP_MIN_LEADS} leads por criativo.`);
+  $$('#perfil-top-cri .eye').forEach(b => b.onclick = () => abrirCriativo(b.dataset.cri));
+
+  const sub = `Qualidade de qualificação · ${esc(nome)} (${int(rows.length)} leads)`;
+  $('#perfil-top-aud-sub').innerHTML = sub;
+  $('#perfil-top-cri-sub').innerHTML = sub;
+}
+
+function abrirCriativo(k) {
+  const ifr = M && M.creative_preview_iframe && M.creative_preview_iframe[k];
+  const lnk = M && M.creative_preview && M.creative_preview[k];
+  $('#cri-nome').textContent = k;
+  $('#cri-frame').src = ifr || 'about:blank';
+  $('#cri-frame').style.display = ifr ? '' : 'none';
+  $('#cri-link').innerHTML = lnk
+    ? `<a href="${esc(lnk)}" target="_blank" rel="noopener">Abrir no Facebook</a> — o preview acima é o anúncio como ele foi entregue.`
+    : 'Sem preview salvo para esta peça.';
+  $('#criModal').classList.add('open');
 }
 
 /** Busca de leads combinando as respostas do bot. Mantém a seleção entre re-renders. */
