@@ -1,6 +1,6 @@
 """
-Busca gasto do Meta Ads do IBR por público (adset) e por criativo (anúncio).
-Saída: data/meta_spend.json
+Busca gasto do Meta Ads do IBR por público (adset) e por criativo (anúncio),
+quebrados por campanha. Saída: data/meta_spend.json
 
 Os rótulos de público e criativo passam por ibr_normalize.py — o mesmo módulo
 usado no fetch_kommo_ibr.py — para que gasto e lead cheguem à mesma chave e o
@@ -12,7 +12,8 @@ from datetime import date, datetime, timedelta, timezone
 from collections import defaultdict
 from pathlib import Path
 
-from ibr_normalize import normalize_audience_meta, normalize_creative
+from ibr_normalize import (normalize_audience_meta, normalize_creative,
+                           normalize_campaign)
 
 
 def _load_env():
@@ -114,6 +115,36 @@ def _round(d):
     return {k: {ds: round(v, 2) for ds, v in days.items() if v} for k, days in d.items()}
 
 
+def _round2(d):
+    """Mesma coisa um nível abaixo: {campanha: {chave: {dia: gasto}}}."""
+    return {c: _round(inner) for c, inner in d.items()}
+
+
+def _dominant_campaign_by_day(by_camp):
+    """{campanha: {público: {dia: gasto}}} → {público: {dia: campanha}}.
+
+    É este mapa que liga LEAD a campanha no dashboard. O 'utm_campaign' que
+    chega no Kommo não serve: metade dos leads traz o nome do adset
+    ('morno_3_lista_oportunidades') e metade o da campanha — os dois são a
+    mesma campanha escrita de dois jeitos. O que o lead tem de confiável é o
+    público, então a campanha vem daqui: no dia em que o lead entrou, qual
+    campanha estava pagando por aquele público.
+
+    Quando duas campanhas disputam o mesmo público no mesmo dia (acontece na
+    virada de uma campanha para a outra), vence a que gastou mais naquele dia
+    — é a que produziu a maior parte dos leads do dia.
+    """
+    por_publico = defaultdict(lambda: defaultdict(dict))
+    for camp, pubs in by_camp.items():
+        for pub, days in pubs.items():
+            for ds, v in days.items():
+                if v:
+                    por_publico[pub][ds][camp] = v
+    return {pub: {ds: max(camps.items(), key=lambda x: x[1])[0]
+                  for ds, camps in dias.items()}
+            for pub, dias in por_publico.items()}
+
+
 def _total(days_by_key):
     return sum(v for days in days_by_key.values() for v in days.values())
 
@@ -127,9 +158,19 @@ def main():
     print("Insights por adset (público)...")
     aud_spend = defaultdict(lambda: defaultdict(float))
     aud_imp, aud_clk = defaultdict(float), defaultdict(float)
+    # Mesmo gasto, quebrado por campanha. É o que permite ao dashboard mostrar
+    # a campanha como agrupador em vez de somar tudo numa linha só.
+    aud_by_camp  = defaultdict(lambda: defaultdict(lambda: defaultdict(float)))
+    camp_spend   = defaultdict(lambda: defaultdict(float))
     for r in fetch_insights("adset"):
-        key = normalize_audience_meta(r.get("adset_name", ""), r.get("campaign_name", ""))
-        aud_spend[key][r.get("date_start", "")] += float(r.get("spend", 0))
+        key  = normalize_audience_meta(r.get("adset_name", ""), r.get("campaign_name", ""))
+        camp = normalize_campaign(r.get("campaign_name", ""))
+        ds, v = r.get("date_start", ""), float(r.get("spend", 0))
+        aud_spend[key][ds] += v
+        aud_by_camp[camp][key][ds] += v
+        # O total da campanha é a soma dos seus adsets: no Meta o gasto do
+        # adset particiona o da campanha, então não há por que pedir de novo.
+        camp_spend[camp][ds] += v
         aud_imp[key] += float(r.get("impressions", 0) or 0)
         aud_clk[key] += float(r.get("clicks", 0) or 0)
     print(f"  {len(aud_spend)} públicos:")
@@ -139,14 +180,19 @@ def main():
     print("\nInsights por anúncio (criativo)...")
     cri_spend = defaultdict(lambda: defaultdict(float))
     cri_imp, cri_clk = defaultdict(float), defaultdict(float)
+    cri_by_camp = defaultdict(lambda: defaultdict(lambda: defaultdict(float)))
     for r in fetch_insights("ad"):
-        key = normalize_creative(r.get("ad_name", ""))
-        cri_spend[key][r.get("date_start", "")] += float(r.get("spend", 0))
+        key  = normalize_creative(r.get("ad_name", ""))
+        camp = normalize_campaign(r.get("campaign_name", ""))
+        ds, v = r.get("date_start", ""), float(r.get("spend", 0))
+        cri_spend[key][ds] += v
+        cri_by_camp[camp][key][ds] += v
         cri_imp[key] += float(r.get("impressions", 0) or 0)
         cri_clk[key] += float(r.get("clicks", 0) or 0)
-    print(f"  {len(cri_spend)} criativos:")
+    print(f"  {len(cri_spend)} criativos em {len(cri_by_camp)} campanha(s):")
     for k, days in sorted(cri_spend.items(), key=lambda x: -sum(x[1].values())):
-        print(f"    R$ {sum(days.values()):>10,.2f}  {k}")
+        n_camp = sum(1 for c in cri_by_camp.values() if c.get(k))
+        print(f"    R$ {sum(days.values()):>10,.2f}  {k}  ({n_camp} campanha(s))")
 
     print("\nStatus dos adsets...")
     aud_status = {}
@@ -156,6 +202,14 @@ def main():
         # Vários adsets caem no mesmo público — basta um ativo pro público estar ativo.
         if key not in aud_status or st == "ACTIVE":
             aud_status[key] = st
+
+    print("Status das campanhas...")
+    camp_status = {}
+    for row in fetch_entities("campaigns"):
+        key = normalize_campaign(row.get("name", ""))
+        st  = row.get("effective_status", "UNKNOWN")
+        if key not in camp_status or st == "ACTIVE":
+            camp_status[key] = st
 
     print("Status e preview dos anúncios...")
     cri_status, cri_preview, ad_id_by_key = {}, {}, {}
@@ -184,6 +238,11 @@ def main():
         "period":     {"since": SINCE, "until": UNTIL},
         "adset":      _round(aud_spend),      # {público: {'YYYY-MM-DD': gasto}}
         "creative":   _round(cri_spend),      # {criativo: {'YYYY-MM-DD': gasto}}
+        "campaign":   _round(camp_spend),     # {campanha: {'YYYY-MM-DD': gasto}}
+        "adset_by_campaign":    _round2(aud_by_camp),   # {campanha: {público: {dia: gasto}}}
+        "creative_by_campaign": _round2(cri_by_camp),   # {campanha: {criativo: {dia: gasto}}}
+        "audience_campaign":    _dominant_campaign_by_day(aud_by_camp),
+        "campaign_status":      camp_status,
         "adset_totals":    {k: {"impressions": aud_imp[k], "clicks": aud_clk[k]} for k in aud_spend},
         "creative_totals": {k: {"impressions": cri_imp[k], "clicks": cri_clk[k]} for k in cri_spend},
         "adset_status":    aud_status,
@@ -205,8 +264,8 @@ def main():
     if out_path.exists():
         try:
             prev = json.loads(out_path.read_text())
-            for k in ("adset_status", "creative_status", "creative_preview",
-                      "creative_preview_iframe"):
+            for k in ("adset_status", "creative_status", "campaign_status",
+                      "creative_preview", "creative_preview_iframe"):
                 if not out[k] and prev.get(k):
                     out[k] = prev[k]
                     print(f"  ↺ {k} preservado do arquivo anterior ({len(prev[k])} itens)")

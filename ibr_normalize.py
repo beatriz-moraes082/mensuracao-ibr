@@ -188,3 +188,66 @@ def normalize_creative(name):
     # Sem regra: devolve o nome limpo (sem sufixo '| variação' e sem [ATIVO]).
     cleaned = re.sub(r"\[ativo\]\s*", "", raw, flags=re.I).strip()
     return cleaned.split(" | ")[0].strip() or SEM_DADO
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  Campanha
+# ═══════════════════════════════════════════════════════════════════════════
+# A campanha é o nível em que a otimização acontece — é ela que se pausa, se
+# escala e se realoca. Aqui ela existe só para AGRUPAR: o nome do Meta vem
+# longo e repetitivo ('IBR | CONVERSAO LP | 01 | PUBLICO MORNO 3 |
+# 2024-01-26'), e empilhado como cabeçalho de tabela ocupa a linha inteira sem
+# informar nada. A limpeza é genérica de propósito — tira o que se repete em
+# toda campanha da conta (prefixo do produto, número de ordem, data de
+# criação) em vez de listar campanha por campanha, que apodrece a cada
+# campanha nova.
+#
+# Atenção: isto NÃO é o caminho do lead até a campanha. O 'utm_campaign' que
+# chega no Kommo carrega ora a campanha, ora o adset — 'morno_3_lista_
+# oportunidades' e 'IBR | CONVERSAO LP | 01 | PUBLICO MORNO 3' são a mesma
+# campanha vista de dois jeitos. Quem liga lead a campanha é o público, pelo
+# mapa adset→campanha que vem da API (ver fetch_meta_spend.py).
+
+# Siglas que perdem o sentido se virarem Capitalizadas.
+_ACRONIMOS = {"LP", "IBR", "IBH", "IBL", "MME", "RMKT", "CBO", "ABO", "YK",
+              "PMAX", "IA", "LAL", "VD", "AD"}
+
+
+def _pretty_token(tok):
+    """'PUBLICO MORNO 3' → 'Morno 3'. Preserva siglas e o que já é misto.
+
+    Os colchetes viram espaço antes de tudo: 'PORTUGAL [SEMELHANTE]' é uma
+    qualificação do público, não uma marcação, e mantê-los faria a sigla colar
+    no colchete ('[SEMELHANTE') e escapar da checagem de maiúsculas.
+    """
+    tok = re.sub(r"[\[\]]", " ", tok)
+    tok = re.sub(r"(?i)^\s*p[uú]blico\s+", "", tok).strip()
+    palavras = []
+    for p in tok.split():
+        if p.upper() in _ACRONIMOS or not p.isupper():
+            palavras.append(p)
+        else:
+            palavras.append(p.capitalize())
+    return " ".join(palavras)
+
+
+def normalize_campaign(name):
+    """Nome da campanha (Meta ou Google) → rótulo curto de agrupamento."""
+    if not name:
+        return SEM_DADO
+    raw = str(name).replace("+", " ").strip()
+    if _is_placeholder(slug(raw)):
+        return SEM_DADO
+    # Data de criação no fim do nome: 'IBR | ... | 2024-01-26', '... | 13/07/2026'.
+    s = re.sub(r"\s*\|?\s*(\d{4}-\d{2}-\d{2}|\d{2}/\d{2}/\d{4})\s*$", "", raw)
+    partes = []
+    for p in s.split("|"):
+        p = p.strip(" ]|[").strip()
+        # Descarta o prefixo do produto e o número de ordem ('01', '02'), que
+        # aparecem em toda campanha e não distinguem uma da outra.
+        if not p or p.upper() == "IBR" or re.fullmatch(r"\d{1,2}", p):
+            continue
+        partes.append(_pretty_token(p))
+    if not partes:
+        return _pretty_token(raw)
+    return " · ".join(partes).replace("Conversao", "Conversão")

@@ -183,6 +183,15 @@ td{padding:10px 13px;font-size:12.5px;color:var(--ink2)}
 td.num,th.num{text-align:right;font-family:var(--f-mono);font-variant-numeric:tabular-nums}
 td b,td strong{color:var(--ink);font-weight:700}
 tfoot td{border-top:1px solid var(--line);font-weight:700;color:var(--ink);background:var(--track)}
+/* tabela agrupada por campanha: o cabeçalho do grupo carrega o subtotal e as
+   linhas de dentro recuam, para o olho separar campanha de público/criativo
+   sem precisar de uma segunda coluna. */
+tbody.cgrp{border-top:2px solid var(--line)}
+tbody.cgrp tr.grp{background:var(--track)}
+tbody.cgrp tr.grp:hover{background:var(--track)}
+tbody.cgrp tr.grp td{font-weight:700;color:var(--ink);border-top:none;padding:9px 13px}
+tbody.cgrp td.ind{padding-left:30px;position:relative}
+tbody.cgrp td.ind::before{content:'';position:absolute;left:15px;top:0;bottom:0;border-left:1px solid var(--line2)}
 .tag{display:inline-block;font-family:var(--f-mono);font-size:10px;font-weight:700;padding:3px 9px;border-radius:999px;
  background:var(--track);color:var(--ink2);white-space:nowrap}
 .tag.meta{background:color-mix(in srgb,var(--accent) 20%,transparent);color:var(--ink)}
@@ -389,10 +398,12 @@ tfoot td{border-top:1px solid var(--line);font-weight:700;color:var(--ink);backg
           <div id="perfil-score-insight"></div></div>
         <div class="card span12"><div class="ch"><div><h3>Respostas do pré-atendimento</h3><div class="sub" id="perfil-bot-sub">Distribuição das respostas e taxa de qualificação de cada uma</div></div></div>
           <div class="grid" id="perfil-bot" style="gap:14px"></div></div>
-        <div class="card span6"><div class="ch"><div><h3>Públicos por qualidade</h3><div class="sub">Leads, taxa de qualificação e CPL qualificado</div></div></div>
-          <div class="tblwrap" style="border:none;box-shadow:none"><table id="perfil-aud"></table></div></div>
-        <div class="card span6"><div class="ch"><div><h3>Criativos por qualidade</h3><div class="sub">Leads, taxa de qualificação e CPL qualificado</div></div></div>
-          <div class="tblwrap" style="border:none;box-shadow:none"><table id="perfil-cri"></table></div></div>
+        <div class="card span12"><div class="ch"><div><h3>Públicos por campanha</h3><div class="sub">Leads, taxa de qualificação e CPL qualificado — agrupados pela campanha que se pausa ou escala</div></div></div>
+          <div class="tblwrap" style="border:none;box-shadow:none"><table id="perfil-aud"></table></div>
+          <div id="perfil-aud-note"></div></div>
+        <div class="card span12"><div class="ch"><div><h3>Criativos por campanha</h3><div class="sub">A mesma peça rodando em campanhas diferentes vira uma linha por campanha</div></div></div>
+          <div class="tblwrap" style="border:none;box-shadow:none"><table id="perfil-cri"></table></div>
+          <div id="perfil-cri-note"></div></div>
         <div class="card span12"><div class="ch"><div><h3>Sinais preditivos</h3><div class="sub">Diferença entre quem qualifica e quem não qualifica</div></div></div>
           <div id="perfil-sinais"></div></div>
         <div class="card span12"><div class="ch"><div><h3>Buscar leads pelas respostas</h3><div class="sub">Combine os filtros — cada resposta do bot é um filtro</div></div><span class="cap" id="perfil-busca-n"></span></div>
@@ -597,6 +608,41 @@ const daysOf = w => Math.max(1, Math.round((w.to - w.from) / 864e5) + 1);
 function windowDays(w) {
   const out = [], d = new Date(w.from); d.setHours(12, 0, 0, 0);
   while (d <= w.to) { out.push(dayKey(d)); d.setDate(d.getDate() + 1); }
+  return out;
+}
+
+const SEM_CAMPANHA = 'Sem campanha identificada';
+
+/** Campanha do lead, deduzida do público — nunca do 'utm_campaign'.
+ *
+ * O campo Campanha do Kommo não é campanha: metade dos leads do Meta chega com
+ * o nome do adset ('morno_3_lista_oportunidades') e metade com o da campanha
+ * ('IBR | CONVERSAO LP | 01 | PUBLICO MORNO 3'), e os dois são a MESMA
+ * campanha. O que o lead traz de confiável é o público; a campanha vem do mapa
+ * adset→campanha que o Meta devolve (`audience_campaign`), no dia em que o
+ * lead entrou.
+ *
+ * Dia sem gasto naquele público (fim de semana sem entrega, lead que chegou
+ * depois da campanha pausar) cai no dia com gasto mais próximo: a campanha não
+ * muda de um dia para o outro, então o vizinho responde certo.
+ */
+const _campCache = new Map();
+function campanhaDoLead(l) {
+  const mapa = M && M.audience_campaign && M.audience_campaign[l.audience];
+  if (!mapa || !l.created_at) return SEM_CAMPANHA;
+  const dia = dayKey(dt(l.created_at));
+  const ck = l.audience + '|' + dia;
+  if (_campCache.has(ck)) return _campCache.get(ck);
+  let hit = mapa[dia];
+  if (!hit) {
+    let melhor = Infinity;
+    for (const d of Object.keys(mapa)) {
+      const dist = Math.abs(new Date(d + 'T12:00:00') - new Date(dia + 'T12:00:00'));
+      if (dist < melhor) { melhor = dist; hit = mapa[d]; }
+    }
+  }
+  const out = hit || SEM_CAMPANHA;
+  _campCache.set(ck, out);
   return out;
 }
 
@@ -894,6 +940,8 @@ function buildMethodology() {
     ['CAC', 'Investimento ÷ vendas cujo lead tem <b>Meta Ads</b> ou <b>Google Ads</b> como origem. É um <b>teto</b>: parte das vendas entrou sem rastreio e está contada como "não rastreado", então o CAC real é menor que o exibido.', 'CAC = investimento pago ÷ vendas com canal Meta ou Google'],
     ['ROAS', 'Receita das vendas atribuídas a mídia paga ÷ investimento. É um <b>piso</b>, pela mesma razão: a receita sem rastreio não entra no numerador.', 'ROAS = receita das vendas pagas ÷ investimento pago'],
     ['Público e criativo', 'Os campos <b>Campanha</b> e <b>Anúncio</b> do contato chegam como slug de UTM e são traduzidos para o mesmo rótulo usado no gasto do Meta — é isso que permite cruzar lead com investimento por público e por peça. Essas duas tabelas cobrem <b>só o Meta</b>; o Google entra nos indicadores de topo, mas ainda não no recorte por público.'],
+    ['Campanha', 'A campanha de um lead <b>não</b> sai do campo Campanha do CRM. Metade dos leads do Meta chega ali com o nome do adset (<code>morno_3_lista_oportunidades</code>) e metade com o da campanha (<code>IBR | CONVERSAO LP | 01 | PUBLICO MORNO 3</code>) — os dois são a mesma campanha, e contá-los separado criaria campanha que não existe. O que o lead traz de confiável é o <b>público</b>; a campanha vem do mapa adset→campanha que o próprio Meta devolve, no dia em que o lead entrou. Dia sem entrega naquele público usa o dia com gasto mais próximo. Nos raros dias em que duas campanhas dividem o mesmo público — virada de uma para outra — vale a que gastou mais no dia. O subtotal da campanha é a soma dos seus adsets, que é como o Meta particiona o gasto.', 'campanha(lead) = campanha dominante do público do lead no dia em que ele entrou'],
+    ['Criativo em várias campanhas', 'A mesma peça costuma rodar em campanhas diferentes, com resultados diferentes. Somada, ela vira uma linha só e esconde onde o dinheiro está — por isso a tabela quebra <b>uma linha por campanha</b>. Com público a quebra quase não separa nada: a conta roda uma campanha por público, então ali a campanha serve para nomear o que se vai pausar ou escalar.'],
     ['Perfil comportamental', 'Radar por pessoa, com cada eixo normalizado <b>em relação ao melhor do time no período</b> — 100 é sempre alguém, não uma meta. Serve para comparar formato entre pessoas; não diz se o time vai bem em termos absolutos. Entram SDRs com 20+ leads e closers com 5+ cards.'],
     ['Ritmo e Prazo', 'Ambos usam a <b>última alteração da tarefa</b> como aproximação de quando ela foi concluída — o Kommo não expõe data de conclusão. Para tarefa concluída e não tocada depois, o número é exato; para tarefa reaberta ou editada, ele <b>superestima</b> o tempo. Ritmo é a mediana de dias entre criar e concluir; Prazo é a fatia das concluídas dentro da data de vencimento.', 'ritmo = mediana(updated_at − created_at) · prazo = concluídas com updated_at ≤ complete_till'],
     ['Base RD', 'Os funis <b>Importação RD</b> e <b>Base Closer RD</b> são trabalho sobre a base legada importada, não demanda de mídia. Ficam fora de leads, CPL e taxa de qualificação.']
@@ -1354,32 +1402,91 @@ function renderPerfil(c) {
       }))) + '</div>';
   }).join('');
 
-  /* públicos e criativos por qualidade (só Meta, que é o que tem gasto) */
+  /* públicos e criativos por CAMPANHA (só Meta, que é o que tem gasto).
+     A campanha é o nível em que a otimização acontece — é ela que se pausa,
+     se escala e se realoca. Somada, uma peça que roda em seis campanhas vira
+     uma linha só e esconde onde o dinheiro está: 'VÍDEO · Léo' aparecia como
+     um criativo de R$15k quando são seis apostas com resultados diferentes.
+     Com público a quebra quase não separa nada (a conta é uma campanha por
+     público), mas nomeia o que se vai pausar — que é o mesmo objetivo. */
   const meta = c.ent.filter(l => l.canal === 'Meta Ads');
-  const byKey = (key, spendMap) => {
-    const m = new Map();
+  const porCampanha = (key, spendByCamp) => {
+    const g = new Map();
+    const cel = (camp, k) => {
+      if (!g.has(camp)) g.set(camp, new Map());
+      const m = g.get(camp);
+      if (!m.has(k)) m.set(k, { k, n: 0, q: 0, r: 0, v: 0 });
+      return m.get(k);
+    };
     meta.forEach(l => {
       const k = l[key]; if (!k || k === '—') return;
-      const e = m.get(k) || { n: 0, q: 0, r: 0, v: 0 }; e.n++;
+      const e = cel(campanhaDoLead(l), k); e.n++;
       if (l.qualified) e.q++; if (l.reuniao_realizada) e.r++;
-      m.set(k, e);
     });
-    c.vend.forEach(l => { const k = l[key]; if (k && m.has(k)) m.get(k).v++; });
-    return [...m.entries()].map(([k, e]) => ({ k, ...e, spend: spendIn(spendMap, c.w, k) }))
-      .sort((a, b) => b.n - a.n);
+    // A venda só entra se veio do Meta. Alguns rótulos canônicos existem dos
+    // dois lados ('Remarketing' é público no Meta e campanha no Google), e sem
+    // o filtro a venda do Google era creditada ao público do Meta.
+    c.vend.forEach(l => {
+      const k = l[key];
+      if (l.canal === 'Meta Ads' && k && k !== '—') cel(campanhaDoLead(l), k).v++;
+    });
+    // O gasto entra mesmo sem lead nenhum: campanha que consome verba e não
+    // devolve nada é justamente o que a otimização precisa enxergar.
+    for (const [camp, porChave] of Object.entries(spendByCamp || {}))
+      for (const k of Object.keys(porChave))
+        if (spendIn(porChave, c.w, k) > 0) cel(camp, k);
+
+    return [...g.entries()].map(([camp, m]) => {
+      const linhas = [...m.values()]
+        .map(r => Object.assign({}, r, { spend: spendIn((spendByCamp || {})[camp], c.w, r.k) }))
+        .filter(r => r.n || r.spend)
+        .sort((a, b) => (b.spend - a.spend) || (b.n - a.n));
+      const tot = linhas.reduce((t, r) => ({ n: t.n + r.n, q: t.q + r.q, v: t.v + r.v, spend: t.spend + r.spend }),
+                                { n: 0, q: 0, v: 0, spend: 0 });
+      return { camp, linhas, tot };
+    }).filter(x => x.linhas.length)
+      .sort((a, b) => (b.tot.spend - a.tot.spend) || (b.tot.n - a.tot.n));
   };
-  const cols = [{ t: '' }, { t: 'Leads', num: 1 }, { t: 'Qualif.', num: 1 }, { t: 'Taxa', num: 1 },
-                { t: 'Vendas', num: 1 }, { t: 'Invest.', num: 1 }, { t: 'CPL', num: 1 },
-                { t: 'CPL qualif.', num: 1 }, { t: 'CAC', num: 1 }];
-  const fill = rows => rows.map(r => [
-    `<b>${esc(r.k)}</b>`, int(r.n), int(r.q), pctS(r.q, r.n),
-    r.v ? `<b>${int(r.v)}</b>` : '0',
-    r.spend ? kbrl(r.spend) : '—', r.spend ? brl(r.spend / r.n) : '—',
+
+  const COLS = ['Leads', 'Qualif.', 'Taxa', 'Vendas', 'Invest.', 'CPL', 'CPL qualif.', 'CAC'];
+  const metricas = r => [
+    int(r.n), int(r.q), pctS(r.q, r.n), r.v ? `<b>${int(r.v)}</b>` : '0',
+    r.spend ? kbrl(r.spend) : '—',
+    r.spend && r.n ? brl(r.spend / r.n) : '—',
     r.spend && r.q ? `<b>${brl(r.spend / r.q)}</b>` : '—',
     r.spend && r.v ? brl(r.spend / r.v) : '—'
-  ]);
-  table($('#perfil-aud'), cols, fill(byKey('audience', M && M.adset)));
-  table($('#perfil-cri'), cols, fill(byKey('creative', M && M.creative)));
+  ];
+  const statusTag = camp => {
+    const st = M && M.campaign_status && M.campaign_status[camp];
+    return st === 'ACTIVE' ? ' <span class="tag good">ativa</span>'
+         : st ? ' <span class="tag">pausada</span>' : '';
+  };
+  const tabelaCamp = (el, grupos, rotulo) => {
+    const head = `<thead><tr><th>${esc(rotulo)}</th>` +
+      COLS.map(t => `<th class="num">${esc(t)}</th>`).join('') + '</tr></thead>';
+    if (!grupos.length) {
+      el.innerHTML = head + `<tbody><tr><td colspan="${COLS.length + 1}"><div class="empty">sem dados no período</div></td></tr></tbody>`;
+      return;
+    }
+    el.innerHTML = head + grupos.map(({ camp, linhas, tot }) =>
+      '<tbody class="cgrp"><tr class="grp"><td>' + esc(camp) + statusTag(camp) + '</td>' +
+      metricas(tot).map(v => `<td class="num">${v}</td>`).join('') + '</tr>' +
+      linhas.map(r => `<tr><td class="ind">${esc(r.k)}</td>` +
+        metricas(r).map(v => `<td class="num">${v}</td>`).join('') + '</tr>').join('') +
+      '</tbody>').join('');
+  };
+
+  const gAud = porCampanha('audience', M && M.adset_by_campaign);
+  const gCri = porCampanha('creative', M && M.creative_by_campaign);
+  tabelaCamp($('#perfil-aud'), gAud, 'Campanha · público');
+  tabelaCamp($('#perfil-cri'), gCri, 'Campanha · criativo');
+  const espalhados = gCri.length
+    ? [...gCri.reduce((m, g) => { g.linhas.forEach(r => m.set(r.k, (m.get(r.k) || 0) + 1)); return m; }, new Map())]
+        .filter(([, n]) => n > 1).sort((a, b) => b[1] - a[1])
+    : [];
+  $('#perfil-cri-note').innerHTML = `<div class="note">A campanha de cada lead vem do <b>público</b>, não do campo Campanha do CRM — metade dos leads do Meta chega com o nome do adset ali, e os dois nomes são a mesma campanha.` +
+    (espalhados.length ? ` No período, ${espalhados.slice(0, 3).map(([k, n]) => `<b>${esc(k)}</b> roda em ${n} campanhas`).join(', ')} — antes cada um era uma linha só.` : '') + '</div>';
+  $('#perfil-aud-note').innerHTML = '<div class="note">A conta roda <b>uma campanha por público</b>, então aqui a campanha quase não divide linhas — ela diz <i>onde</i> mexer. O subtotal da campanha é a soma dos seus adsets, que é como o Meta particiona o gasto.</div>';
 
   /* Sinais preditivos — cada resposta é comparada com a média de quem
      respondeu AQUELA pergunta, não com a média geral. Quem responde o bot já
