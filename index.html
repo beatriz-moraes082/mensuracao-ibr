@@ -152,7 +152,7 @@ input[type=date]{border:1px solid var(--line);background:var(--surface);color:va
 .barlist{display:flex;flex-direction:column;gap:10px}
 .row{display:grid;grid-template-columns:170px 1fr auto;align-items:center;gap:12px}
 .lab{font-size:12.5px;color:var(--ink2);text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
-.lab .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:middle;background:var(--mut)}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:middle;background:var(--mut)}
 .track{height:14px;background:var(--track);border-radius:999px;overflow:hidden}
 .bar{height:100%;width:var(--w);border-radius:999px;min-width:4px;background:var(--bar);transition:width .7s cubic-bezier(.2,.85,.25,1)}
 .bar.lead,.dot.lead{background:var(--accent)}
@@ -415,6 +415,12 @@ tfoot td{border-top:1px solid var(--line);font-weight:700;color:var(--ink);backg
           <div class="pyr" id="pyr-sdr"></div><div id="rates-sdr"></div></div>
         <div class="card span6"><div class="ch"><div><h3>Funil Closer</h3><div class="sub" id="funis-closer-sub">Reunião realizada → venda ganha</div></div></div>
           <div class="pyr" id="pyr-closer"></div><div id="rates-closer"></div></div>
+        <div class="card span12"><div class="ch"><div><h3>Funil SDR por canal</h3><div class="sub" id="fc-sdr-sub">As mesmas etapas acima, abertas pela origem do lead</div></div></div>
+          <div class="tblwrap" style="border:none;box-shadow:none"><table id="fc-sdr"></table></div>
+          <div id="fc-sdr-note"></div></div>
+        <div class="card span12"><div class="ch"><div><h3>Funil Closer por canal</h3><div class="sub" id="fc-closer-sub">Da reunião que virou negociação até a venda, pela origem do lead</div></div></div>
+          <div class="tblwrap" style="border:none;box-shadow:none"><table id="fc-closer"></table></div>
+          <div id="fc-closer-note"></div></div>
         <div class="card span12"><div class="ch"><div><h3>Funil completo</h3><div class="sub">Da entrada do lead até a venda — conversão acumulada</div></div></div>
           <div class="pyr" id="pyr-full"></div></div>
         <div class="card span6"><div class="ch"><div><h3>Perdas nos funis de entrada</h3><div class="sub" id="loss-sdr-sub">—</div></div></div><div id="loss-sdr"></div></div>
@@ -542,6 +548,7 @@ const pct = (a, b) => (b > 0 ? (100 * a / b) : 0);
 const pctS = (a, b, d = 0) => (b > 0 ? (100 * a / b).toFixed(d).replace('.', ',') + '%' : '—');
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const kbrl = v => v >= 1000 ? 'R$ ' + (v / 1000).toFixed(v >= 10000 ? 0 : 1).replace('.', ',') + 'k' : brl(v);
+const plural = (n, um, muitos) => int(n) + ' ' + (n === 1 ? um : muitos);
 
 const dt = ts => new Date(ts * 1000);
 const dayKey = d => { const x = new Date(d); return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0'); };
@@ -1659,6 +1666,103 @@ function lossList(el, sub, leads) {
   el.innerHTML = barlist(rows);
 }
 
+/* ── os dois funis abertos por canal ──────────────────────────────────────────
+   Estas duas tabelas são as pirâmides acima vistas pela origem do lead. Elas
+   reusam exatamente os filtros do computeCore, só que agrupados por `canal`,
+   e por isso o rodapé de cada coluna bate com o degrau correspondente da
+   pirâmide. Divergência entre os dois é bug, não arredondamento.
+   O canal é o normalizado pelo ibr_normalize a partir da UTM/origem do CRM —
+   o mesmo campo que a aba Diagnóstico e a aba Vendas usam. */
+const NAO_RASTREADO = 'Não rastreado';
+const MIN_CANAL = 25;
+
+// "Não rastreado" desce sempre para a última linha. Ele não é um canal que se
+// possa comparar com Meta ou Google — é a parte cega da medição. Deixá-lo
+// disputar o topo por volume empurraria para baixo justamente o canal sobre o
+// qual a operação decide aumentar ou cortar verba.
+const ordenaCanais = (mapa, peso) => [...mapa.entries()].sort((a, b) =>
+  (a[0] === NAO_RASTREADO) - (b[0] === NAO_RASTREADO) || peso(b[1]) - peso(a[1]));
+
+const canalCel = k => `<span class="dot ${canalDot(k)}"></span><b>${esc(k)}</b>`;
+
+// Taxa de amostra pequena não vai em negrito: com 6 leads, um qualificado a
+// mais move a taxa 17 pontos, e o negrito daria a ela um peso que não tem.
+const taxaCel = (a, b, n) => b > 0 ? (n >= MIN_CANAL ? `<b>${pctS(a, b)}</b>` : pctS(a, b)) : '—';
+
+function funisPorCanal(c) {
+  /* SDR — todas as colunas na mesma safra: leads criados dentro da janela. */
+  const sdr = new Map();
+  const celS = k => { if (!sdr.has(k)) sdr.set(k, { n: 0, q: 0, a: 0, r: 0 }); return sdr.get(k); };
+  c.ent.forEach(l => {
+    const e = celS(l.canal); e.n++;
+    if (l.qualified) e.q++;
+    if (l.reuniao_agendada) e.a++;
+    if (l.reuniao_realizada) e.r++;
+  });
+  table($('#fc-sdr'),
+    [{ t: 'Canal' }, { t: 'Leads', num: 1 }, { t: 'Qualif.', num: 1 }, { t: 'Agend.', num: 1 },
+     { t: 'Realiz.', num: 1 }, { t: 'Qualificação', num: 1 }, { t: 'Agendamento', num: 1 },
+     { t: 'Comparec.', num: 1 }, { t: 'Lead → reunião', num: 1 }],
+    ordenaCanais(sdr, v => v.n).map(([k, v]) => [
+      canalCel(k), int(v.n), int(v.q), int(v.a), int(v.r),
+      taxaCel(v.q, v.n, v.n), taxaCel(v.a, v.q, v.n), taxaCel(v.r, v.a, v.n), taxaCel(v.r, v.n, v.n)
+    ]),
+    sdr.size ? ['Total', int(c.leads), int(c.qualif), int(c.agend), int(c.realiz),
+                pctS(c.qualif, c.leads), pctS(c.agend, c.qualif), pctS(c.realiz, c.agend),
+                pctS(c.realiz, c.leads)] : null);
+
+  const semCanal = (sdr.get(NAO_RASTREADO) || { n: 0 }).n;
+  $('#fc-sdr-sub').textContent =
+    `${plural(sdr.size, 'origem', 'origens')} no período · ${pctS(semCanal, c.leads)} dos leads sem canal no CRM`;
+  $('#fc-sdr-note').innerHTML = `<div class="note">Cada coluna é o mesmo filtro do degrau de cima,
+    agrupado pelo canal do lead. As taxas seguem a cadeia do funil: <b>qualificação</b> sobre leads,
+    <b>agendamento</b> sobre qualificados, <b>comparecimento</b> sobre agendados. A última coluna
+    atravessa o funil inteiro e é a que compara canais de verdade — taxa alta numa etapa isolada
+    pode ser só um filtro frouxo na etapa anterior. Só vai em negrito a taxa de canal com
+    <b>${MIN_CANAL}+ leads</b> na janela. <b>Não rastreado</b> fica por último de propósito: é lead
+    que chegou sem UTM, não um canal — o que ele mostra é o tamanho do ponto cego.</div>`;
+
+  /* Closer — cards e propostas são a safra criada na janela; vendas e receita
+     entram por data de fechamento, que é a mesma regra da pirâmide do Closer.
+     São duas safras diferentes na mesma linha, e o rodapé avisa. */
+  const clo = new Map();
+  const celC = k => { if (!clo.has(k)) clo.set(k, { n: 0, p: 0, v: 0, rec: 0, cv: 0 }); return clo.get(k); };
+  c.clo.forEach(l => {
+    const e = celC(l.canal); e.n++;
+    if (l.proposta || PROPOSTA_STAGES.includes(l.status)) e.p++;
+  });
+  c.vend.forEach(l => {
+    const e = celC(l.canal); e.v++; e.rec += l.price || 0;
+    if ((l.price || 0) > 0) e.cv++;
+  });
+  table($('#fc-closer'),
+    [{ t: 'Canal' }, { t: 'Cards', num: 1 }, { t: 'Propostas', num: 1 }, { t: 'Vendas', num: 1 },
+     { t: 'Receita', num: 1 }, { t: 'Taxa proposta', num: 1 }, { t: 'Card → venda', num: 1 },
+     { t: 'Ticket', num: 1 }],
+    // A ordem acompanha a da tabela do SDR (volume de cards) para que as duas
+    // se leiam na mesma sequência de canais, e não por receita.
+    ordenaCanais(clo, v => v.n).map(([k, v]) => [
+      canalCel(k), int(v.n), int(v.p), v.v ? `<b>${int(v.v)}</b>` : '0',
+      v.rec ? kbrl(v.rec) : '—',
+      taxaCel(v.p, v.n, v.n), taxaCel(v.v, v.n, v.n), v.cv ? brl(v.rec / v.cv) : '—'
+    ]),
+    clo.size ? ['Total', int(c.clo.length), int(c.prop), int(c.vendas), kbrl(c.receita),
+                pctS(c.prop, c.clo.length), pctS(c.vendas, c.clo.length),
+                c.ticket ? brl(c.ticket) : '—'] : null);
+
+  const semCanalClo = (clo.get(NAO_RASTREADO) || { n: 0 }).n;
+  $('#fc-closer-sub').textContent =
+    `${plural(clo.size, 'origem', 'origens')} no período · ${pctS(semCanalClo, c.clo.length)} dos cards sem canal no CRM`;
+  $('#fc-closer-note').innerHTML = `<div class="note"><b>Cards</b> e <b>propostas</b> contam o que
+    foi criado na janela; <b>vendas</b> e <b>receita</b> entram pela data de fechamento — é a mesma
+    regra da pirâmide do Closer, e significa que a venda desta semana costuma ser de um card aberto
+    semanas atrás. Em janela curta, portanto, <b>card → venda</b> é uma razão entre duas safras, não
+    a conversão daquele grupo de cards; em janela longa ela converge. O <b>ticket</b> divide só pelas
+    vendas com valor preenchido no CRM. O canal aqui é o do card do Closer: quando o lead avança, o
+    Kommo recria o negócio, e card recriado sem a origem cai em <b>não rastreado</b> mesmo que o
+    card de entrada da mesma pessoa tivesse canal.</div>`;
+}
+
 function renderFunis(c) {
   const tag = (l, t) => (l.tags || []).includes(t);
   const botOk = c.ent.filter(l => tag(l, 'bot-concluído')).length;
@@ -1715,6 +1819,8 @@ function renderFunis(c) {
     { k: 'Reunião agendada', n: c.agend }, { k: 'Reunião realizada', n: c.realiz },
     { k: 'Venda', n: c.vendas, win: 1, hint: 'por data de fechamento' }
   ]);
+
+  funisPorCanal(c);
 
   lossList($('#loss-sdr'), '#loss-sdr-sub', c.ent);
   lossList($('#loss-closer'), '#loss-closer-sub', c.clo.filter(l => l.closed_in_period !== false));
