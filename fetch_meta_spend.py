@@ -1,19 +1,23 @@
 """
-Busca gasto do Meta Ads do IBR por público (adset) e por criativo (anúncio),
-quebrados por campanha. Saída: data/meta_spend.json
+Busca gasto do Meta Ads do IBR por campanha e por público (adset).
+Saída: data/meta_spend.json
 
-Os rótulos de público e criativo passam por ibr_normalize.py — o mesmo módulo
-usado no fetch_kommo_ibr.py — para que gasto e lead cheguem à mesma chave e o
-dashboard consiga calcular CPL, CPL qualificado, CAC e ROAS por público/criativo.
+Os rótulos passam por ibr_normalize.py — o mesmo módulo usado no
+fetch_kommo_ibr.py — para que gasto e lead cheguem à mesma chave e o dashboard
+consiga calcular CPL, CPL qualificado e CAC por campanha.
+
+Não busca nível de anúncio. O dashboard deixou de ter recorte por criativo, e
+manter a coleta significaria oito varreduras a mais na API e 184 requisições de
+preview a cada rodada, para gravar 180 KB que ninguém lê. O histórico do git
+tem o código, se o recorte voltar.
 """
 
-import json, os, re, requests
+import json, os, requests
 from datetime import date, datetime, timedelta, timezone
 from collections import defaultdict
 from pathlib import Path
 
-from ibr_normalize import (normalize_audience_meta, normalize_creative,
-                           normalize_campaign)
+from ibr_normalize import normalize_audience_meta, normalize_campaign
 
 
 def _load_env():
@@ -58,7 +62,7 @@ def _fetch_window(level, since, until):
     params = {
         "access_token":   TOKEN,
         "level":          level,
-        "fields":         f"{level}_name,campaign_name,spend,impressions,clicks",
+        "fields":         f"{level}_name,campaign_name,spend",
         "time_range":     f'{{"since":"{since}","until":"{until}"}}',
         "time_increment": 1,
         "limit":          500,
@@ -83,11 +87,10 @@ def fetch_insights(level):
     return rows
 
 
-def fetch_entities(endpoint, extra_fields=""):
-    """Status (ACTIVE/PAUSED/...) e metadados de adsets ou ads."""
+def fetch_entities(endpoint):
+    """Status (ACTIVE/PAUSED/...) das entidades de um endpoint."""
     rows, url = [], f"{API}/{ACCOUNT}/{endpoint}"
-    fields = "name,effective_status,status" + (f",{extra_fields}" if extra_fields else "")
-    params = {"access_token": TOKEN, "fields": fields, "limit": 500}
+    params = {"access_token": TOKEN, "fields": "name,effective_status,status", "limit": 500}
     while url:
         data = requests.get(url, params=params, timeout=90).json()
         if "error" in data:
@@ -98,26 +101,8 @@ def fetch_entities(endpoint, extra_fields=""):
     return rows
 
 
-def _fetch_iframe_src(ad_id):
-    """Extrai o src do iframe de preview — usado no modal 'ver criativo'."""
-    try:
-        r = requests.get(f"{API}/{ad_id}/previews",
-                         params={"access_token": TOKEN, "ad_format": "DESKTOP_FEED_STANDARD"},
-                         timeout=15)
-        body = r.json().get("data", [{}])[0].get("body", "") if r.ok else ""
-        m = re.search(r"src=['\"]([^'\"]+)['\"]", body)
-        return m.group(1).replace("&amp;", "&") if m else ""
-    except Exception:
-        return ""
-
-
 def _round(d):
     return {k: {ds: round(v, 2) for ds, v in days.items() if v} for k, days in d.items()}
-
-
-def _round2(d):
-    """Mesma coisa um nível abaixo: {campanha: {chave: {dia: gasto}}}."""
-    return {c: _round(inner) for c, inner in d.items()}
 
 
 def _dominant_campaign_by_day(by_camp):
@@ -157,11 +142,11 @@ def main():
     # e só com o diário o investimento da janela bate com o real.
     print("Insights por adset (público)...")
     aud_spend = defaultdict(lambda: defaultdict(float))
-    aud_imp, aud_clk = defaultdict(float), defaultdict(float)
-    # Mesmo gasto, quebrado por campanha. É o que permite ao dashboard mostrar
-    # a campanha como agrupador em vez de somar tudo numa linha só.
-    aud_by_camp  = defaultdict(lambda: defaultdict(lambda: defaultdict(float)))
-    camp_spend   = defaultdict(lambda: defaultdict(float))
+    # Gasto quebrado por campanha. Não vai para o arquivo: serve para somar o
+    # total da campanha e para descobrir, dia a dia, qual campanha estava
+    # pagando por cada público — que é como o lead chega até a campanha dele.
+    aud_by_camp = defaultdict(lambda: defaultdict(lambda: defaultdict(float)))
+    camp_spend  = defaultdict(lambda: defaultdict(float))
     for r in fetch_insights("adset"):
         key  = normalize_audience_meta(r.get("adset_name", ""), r.get("campaign_name", ""))
         camp = normalize_campaign(r.get("campaign_name", ""))
@@ -171,104 +156,47 @@ def main():
         # O total da campanha é a soma dos seus adsets: no Meta o gasto do
         # adset particiona o da campanha, então não há por que pedir de novo.
         camp_spend[camp][ds] += v
-        aud_imp[key] += float(r.get("impressions", 0) or 0)
-        aud_clk[key] += float(r.get("clicks", 0) or 0)
-    print(f"  {len(aud_spend)} públicos:")
+    print(f"  {len(aud_spend)} públicos em {len(camp_spend)} campanha(s):")
     for k, days in sorted(aud_spend.items(), key=lambda x: -sum(x[1].values())):
         print(f"    R$ {sum(days.values()):>10,.2f}  {k}")
 
-    print("\nInsights por anúncio (criativo)...")
-    cri_spend = defaultdict(lambda: defaultdict(float))
-    cri_imp, cri_clk = defaultdict(float), defaultdict(float)
-    cri_by_camp = defaultdict(lambda: defaultdict(lambda: defaultdict(float)))
-    for r in fetch_insights("ad"):
-        key  = normalize_creative(r.get("ad_name", ""))
-        camp = normalize_campaign(r.get("campaign_name", ""))
-        ds, v = r.get("date_start", ""), float(r.get("spend", 0))
-        cri_spend[key][ds] += v
-        cri_by_camp[camp][key][ds] += v
-        cri_imp[key] += float(r.get("impressions", 0) or 0)
-        cri_clk[key] += float(r.get("clicks", 0) or 0)
-    print(f"  {len(cri_spend)} criativos em {len(cri_by_camp)} campanha(s):")
-    for k, days in sorted(cri_spend.items(), key=lambda x: -sum(x[1].values())):
-        n_camp = sum(1 for c in cri_by_camp.values() if c.get(k))
-        print(f"    R$ {sum(days.values()):>10,.2f}  {k}  ({n_camp} campanha(s))")
-
-    print("\nStatus dos adsets...")
-    aud_status = {}
-    for row in fetch_entities("adsets"):
-        key = normalize_audience_meta(row.get("name", ""))
-        st  = row.get("effective_status", "UNKNOWN")
-        # Vários adsets caem no mesmo público — basta um ativo pro público estar ativo.
-        if key not in aud_status or st == "ACTIVE":
-            aud_status[key] = st
-
-    print("Status das campanhas...")
+    print("\nStatus das campanhas...")
     camp_status = {}
     for row in fetch_entities("campaigns"):
         key = normalize_campaign(row.get("name", ""))
         st  = row.get("effective_status", "UNKNOWN")
         if key not in camp_status or st == "ACTIVE":
             camp_status[key] = st
-
-    print("Status e preview dos anúncios...")
-    cri_status, cri_preview, ad_id_by_key = {}, {}, {}
-    for row in fetch_entities("ads", extra_fields="preview_shareable_link,id"):
-        key = normalize_creative(row.get("name", ""))
-        st  = row.get("effective_status", "UNKNOWN")
-        prv, aid = row.get("preview_shareable_link", ""), row.get("id", "")
-        if key not in cri_status or st == "ACTIVE":
-            cri_status[key] = st
-            if prv: cri_preview[key] = prv
-            if aid: ad_id_by_key[key] = aid
-        elif key not in cri_preview and prv:
-            cri_preview[key] = prv
-            ad_id_by_key.setdefault(key, aid)
-
-    print(f"Buscando iframe de preview de {len(ad_id_by_key)} criativos...")
-    cri_iframe = {}
-    for key, aid in ad_id_by_key.items():
-        src = _fetch_iframe_src(aid)
-        if src: cri_iframe[key] = src
-    print(f"  {len(cri_iframe)} iframes")
+    print(f"  {len(camp_status)} campanhas")
 
     out = {
         "fetched_at": datetime.now(timezone.utc).isoformat(),
         "account":    ACCOUNT,
         "period":     {"since": SINCE, "until": UNTIL},
         "adset":      _round(aud_spend),      # {público: {'YYYY-MM-DD': gasto}}
-        "creative":   _round(cri_spend),      # {criativo: {'YYYY-MM-DD': gasto}}
         "campaign":   _round(camp_spend),     # {campanha: {'YYYY-MM-DD': gasto}}
-        "adset_by_campaign":    _round2(aud_by_camp),   # {campanha: {público: {dia: gasto}}}
-        "creative_by_campaign": _round2(cri_by_camp),   # {campanha: {criativo: {dia: gasto}}}
-        "audience_campaign":    _dominant_campaign_by_day(aud_by_camp),
-        "campaign_status":      camp_status,
-        "adset_totals":    {k: {"impressions": aud_imp[k], "clicks": aud_clk[k]} for k in aud_spend},
-        "creative_totals": {k: {"impressions": cri_imp[k], "clicks": cri_clk[k]} for k in cri_spend},
-        "adset_status":    aud_status,
-        "creative_status": cri_status,
-        "creative_preview": cri_preview,
-        "creative_preview_iframe": cri_iframe,
+        "audience_campaign": _dominant_campaign_by_day(aud_by_camp),
+        "campaign_status":   camp_status,
     }
 
     out_path = Path(__file__).resolve().parent / "data/meta_spend.json"
     # Se a API voltou vazia (token expirado), preserva o arquivo anterior em vez
     # de publicar um dashboard zerado.
-    if not aud_spend and not cri_spend and out_path.exists():
+    if not aud_spend and out_path.exists():
         print("\n⚠️  API retornou vazio (token expirado?). Mantendo dados anteriores.")
         return
 
-    # Status e preview vêm de endpoints separados que estouram rate limit com
-    # facilidade. Quando falham, o gasto (que é o essencial) já veio — então
-    # reaproveita o que o arquivo anterior tinha em vez de zerar os previews.
+    # O status vem de um endpoint separado, que estoura rate limit com muito
+    # mais facilidade que o de insights. Quando ele falha, o gasto — que é o
+    # essencial — já veio; então reaproveita o status do arquivo anterior em
+    # vez de publicar tudo sem selo de ativa/pausada.
     if out_path.exists():
         try:
             prev = json.loads(out_path.read_text())
-            for k in ("adset_status", "creative_status", "campaign_status",
-                      "creative_preview", "creative_preview_iframe"):
-                if not out[k] and prev.get(k):
-                    out[k] = prev[k]
-                    print(f"  ↺ {k} preservado do arquivo anterior ({len(prev[k])} itens)")
+            if not out["campaign_status"] and prev.get("campaign_status"):
+                out["campaign_status"] = prev["campaign_status"]
+                print(f"  ↺ campaign_status preservado do arquivo anterior "
+                      f"({len(prev['campaign_status'])} itens)")
         except Exception as e:
             print(f"  ⚠️  não consegui ler o arquivo anterior: {e}")
 
