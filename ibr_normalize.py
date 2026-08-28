@@ -41,6 +41,23 @@ def _is_placeholder(s):
 #  Canal
 # ═══════════════════════════════════════════════════════════════════════════
 
+def _origem_legivel(origem):
+    """Origem sem canal canônico → o nome do CRM, só que apresentável.
+
+    A integração às vezes prefixa 'Fonte: ' ('Fonte: Busca Paga | google'), que
+    é rótulo do campo e não parte do nome. Nome todo em minúsculo ganha inicial
+    maiúscula para não destoar de 'Meta Ads' na mesma coluna — menos quando é
+    domínio ('chatgpt.com', 'wl.co'), onde a minúscula é a grafia certa.
+    Marca escrita em maiúsculas ou já em caixa mista fica como veio: 'TikTok'
+    tem casing próprio e capitalize() o estragaria.
+    """
+    nome = re.sub(r"(?i)^\s*fonte\s*:\s*", "", str(origem or "")).replace("+", " ")
+    nome = re.sub(r"\s+", " ", nome).strip()
+    if nome.islower() and "." not in nome:
+        nome = nome.capitalize()
+    return nome or NAO_RASTREADO
+
+
 def normalize_canal(origem):
     """Campo 'Origem' do contato → canal canônico.
 
@@ -61,7 +78,11 @@ def normalize_canal(origem):
         return "Meta Ads"
     if "google" in s or "gads" in tokens:
         return "Google Ads"
-    if "hablla" in s:
+    # 'habl+a' cobre as duas grafias que o campo traz — 'hablla.io' e o
+    # 'Fonte: Habla' com um L só. Nenhuma delas é substring da outra, e com o
+    # nome real no lugar do balde de residuais a grafia errada abriria uma
+    # segunda linha para o mesmo bot.
+    if re.search(r"habl+a", s):
         return "Hablla (bot)"
     if "indicacao" in s or "referral" in s:
         return "Indicação/Referral"
@@ -69,9 +90,13 @@ def normalize_canal(origem):
         return "Direto/Orgânico"
     if "rd" in tokens:
         return "Base RD"
-    # Origens residuais (tiktok, yahoo, chatgpt.com…) somam pouquíssimos leads;
-    # agrupadas, param de poluir os rankings por canal.
-    return "Outras origens"
+    # Origem sem regra própria sai com o nome que o CRM registrou. O balde
+    # "Outras origens" economizava uma linha e apagava a única informação que
+    # essas origens têm — são 9 leads hoje, mas é assim que um canal novo
+    # aparece pela primeira vez: Podcast, TikTok e chatgpt.com são respostas,
+    # "outras" não é. A cardinalidade fica solta de propósito; erro de
+    # digitação no CRM vira uma linha visível em vez de sumir dentro do balde.
+    return _origem_legivel(origem)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
