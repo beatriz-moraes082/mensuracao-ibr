@@ -183,15 +183,6 @@ td{padding:10px 13px;font-size:12.5px;color:var(--ink2)}
 td.num,th.num{text-align:right;font-family:var(--f-mono);font-variant-numeric:tabular-nums}
 td b,td strong{color:var(--ink);font-weight:700}
 tfoot td{border-top:1px solid var(--line);font-weight:700;color:var(--ink);background:var(--track)}
-/* tabela agrupada por campanha: o cabeçalho do grupo carrega o subtotal e as
-   linhas de dentro recuam, para o olho separar campanha de público/criativo
-   sem precisar de uma segunda coluna. */
-tbody.cgrp{border-top:2px solid var(--line)}
-tbody.cgrp tr.grp{background:var(--track)}
-tbody.cgrp tr.grp:hover{background:var(--track)}
-tbody.cgrp tr.grp td{font-weight:700;color:var(--ink);border-top:none;padding:9px 13px}
-tbody.cgrp td.ind{padding-left:30px;position:relative}
-tbody.cgrp td.ind::before{content:'';position:absolute;left:15px;top:0;bottom:0;border-left:1px solid var(--line2)}
 .tag{display:inline-block;font-family:var(--f-mono);font-size:10px;font-weight:700;padding:3px 9px;border-radius:999px;
  background:var(--track);color:var(--ink2);white-space:nowrap}
 .tag.meta{background:color-mix(in srgb,var(--accent) 20%,transparent);color:var(--ink)}
@@ -401,9 +392,6 @@ tbody.cgrp td.ind::before{content:'';position:absolute;left:15px;top:0;bottom:0;
         <div class="card span12"><div class="ch"><div><h3>Campanhas por qualificação</h3><div class="sub">Qual campanha traz lead que qualifica — Meta e Google na mesma régua, da melhor taxa para a pior</div></div></div>
           <div class="tblwrap" style="border:none;box-shadow:none"><table id="perfil-camp"></table></div>
           <div id="perfil-camp-note"></div></div>
-        <div class="card span12"><div class="ch"><div><h3>Públicos por campanha</h3><div class="sub">Dentro de cada campanha do Meta, qual público sustenta a taxa e a que custo</div></div></div>
-          <div class="tblwrap" style="border:none;box-shadow:none"><table id="perfil-aud"></table></div>
-          <div id="perfil-aud-note"></div></div>
         <div class="card span12"><div class="ch"><div><h3>Sinais preditivos</h3><div class="sub">Diferença entre quem qualifica e quem não qualifica</div></div></div>
           <div id="perfil-sinais"></div></div>
         <div class="card span12"><div class="ch"><div><h3>Buscar leads pelas respostas</h3><div class="sub">Combine os filtros — cada resposta do bot é um filtro</div></div><span class="cap" id="perfil-busca-n"></span></div>
@@ -676,6 +664,12 @@ function rotuloCampanhaUTM(raw) {
   // Sem isso ele viraria uma linha só dele, ao lado da linha real da campanha.
   const canon = _canonMeta(_semAcento(toks.join('').toLowerCase()));
   if (canon) return canon;
+  // Nome escrito por gente ('Disparo de Reativação') não tem separador de
+  // slug. Quebrá-lo em '·' estraga um rótulo que já chegou legível — só slug
+  // e nome com barras precisam ser remontados.
+  const limpo = String(raw).replace(/\+/g, ' ').trim();
+  if (!/[|_\/-]/.test(limpo))
+    return limpo.length > 32 ? limpo.slice(0, 31) + '…' : limpo;
   const nome = toks.map(x => x.charAt(0).toUpperCase() + x.slice(1).toLowerCase()).join(' · ');
   return nome.length > 32 ? nome.slice(0, 31) + '…' : nome;
 }
@@ -1573,79 +1567,6 @@ function renderPerfil(c) {
       : '') +
     `A ordem é por taxa, mas só entre as campanhas com <b>${MIN_TAXA}+ leads</b> na janela — abaixo disso a taxa vira ruído (um lead qualificado já marca 100%), então elas descem para o fim junto com as que só gastaram. O investimento do <b>Meta</b> e do <b>Google</b> vem por campanha nas duas APIs; o Google não separa gasto por público nem por anúncio, e é por isso que ele aparece aqui e não na tabela abaixo. Em janelas longas, parte do gasto é anterior ao rastreio de lead — aí o CPL infla.</div>`;
 
-  /* públicos e criativos por CAMPANHA (só Meta, que é o que tem gasto).
-     A campanha é o nível em que a otimização acontece — é ela que se pausa,
-     se escala e se realoca. Somada, uma peça que roda em seis campanhas vira
-     uma linha só e esconde onde o dinheiro está: 'VÍDEO · Léo' aparecia como
-     um criativo de R$15k quando são seis apostas com resultados diferentes.
-     Com público a quebra quase não separa nada (a conta é uma campanha por
-     público), mas nomeia o que se vai pausar — que é o mesmo objetivo. */
-  const meta = c.ent.filter(l => l.canal === 'Meta Ads');
-  const porCampanha = (key, spendByCamp) => {
-    const g = new Map();
-    const cel = (camp, k) => {
-      if (!g.has(camp)) g.set(camp, new Map());
-      const m = g.get(camp);
-      if (!m.has(k)) m.set(k, { k, n: 0, q: 0, r: 0, v: 0 });
-      return m.get(k);
-    };
-    meta.forEach(l => {
-      const k = l[key]; if (!k || k === '—') return;
-      const e = cel(campanhaDoLead(l), k); e.n++;
-      if (l.qualified) e.q++; if (l.reuniao_realizada) e.r++;
-    });
-    // A venda só entra se veio do Meta. Alguns rótulos canônicos existem dos
-    // dois lados ('Remarketing' é público no Meta e campanha no Google), e sem
-    // o filtro a venda do Google era creditada ao público do Meta.
-    c.vend.forEach(l => {
-      const k = l[key];
-      if (l.canal === 'Meta Ads' && k && k !== '—') cel(campanhaDoLead(l), k).v++;
-    });
-    // O gasto entra mesmo sem lead nenhum: campanha que consome verba e não
-    // devolve nada é justamente o que a otimização precisa enxergar.
-    for (const [camp, porChave] of Object.entries(spendByCamp || {}))
-      for (const k of Object.keys(porChave))
-        if (spendIn(porChave, c.w, k) > 0) cel(camp, k);
-
-    return [...g.entries()].map(([camp, m]) => {
-      const linhas = [...m.values()]
-        .map(r => Object.assign({}, r, { spend: spendIn((spendByCamp || {})[camp], c.w, r.k) }))
-        .filter(r => r.n || r.spend)
-        .sort((a, b) => (b.spend - a.spend) || (b.n - a.n));
-      const tot = linhas.reduce((t, r) => ({ n: t.n + r.n, q: t.q + r.q, v: t.v + r.v, spend: t.spend + r.spend }),
-                                { n: 0, q: 0, v: 0, spend: 0 });
-      return { camp, linhas, tot };
-    }).filter(x => x.linhas.length)
-      .sort((a, b) => (b.tot.spend - a.tot.spend) || (b.tot.n - a.tot.n));
-  };
-
-  const COLS = ['Leads', 'Qualif.', 'Taxa', 'Vendas', 'Invest.', 'CPL', 'CPL qualif.', 'CAC'];
-  const metricas = r => [
-    int(r.n), int(r.q), pctS(r.q, r.n), r.v ? `<b>${int(r.v)}</b>` : '0',
-    r.spend ? kbrl(r.spend) : '—',
-    r.spend && r.n ? brl(r.spend / r.n) : '—',
-    r.spend && r.q ? `<b>${brl(r.spend / r.q)}</b>` : '—',
-    r.spend && r.v ? brl(r.spend / r.v) : '—'
-  ];
-  const statusTag = camp => statusTagMeta(M && M.campaign_status && M.campaign_status[camp]);
-  const tabelaCamp = (el, grupos, rotulo) => {
-    const head = `<thead><tr><th>${esc(rotulo)}</th>` +
-      COLS.map(t => `<th class="num">${esc(t)}</th>`).join('') + '</tr></thead>';
-    if (!grupos.length) {
-      el.innerHTML = head + `<tbody><tr><td colspan="${COLS.length + 1}"><div class="empty">sem dados no período</div></td></tr></tbody>`;
-      return;
-    }
-    el.innerHTML = head + grupos.map(({ camp, linhas, tot }) =>
-      '<tbody class="cgrp"><tr class="grp"><td>' + esc(camp) + statusTag(camp) + '</td>' +
-      metricas(tot).map(v => `<td class="num">${v}</td>`).join('') + '</tr>' +
-      linhas.map(r => `<tr><td class="ind">${esc(r.k)}</td>` +
-        metricas(r).map(v => `<td class="num">${v}</td>`).join('') + '</tr>').join('') +
-      '</tbody>').join('');
-  };
-
-  tabelaCamp($('#perfil-aud'), porCampanha('audience', M && M.adset_by_campaign), 'Campanha · público');
-  $('#perfil-aud-note').innerHTML = '<div class="note">Só o <b>Meta</b>: é onde existe gasto por público. A conta roda uma campanha por público, então a campanha quase não divide linhas aqui — ela diz <i>onde</i> mexer. A campanha de cada lead vem do público, não do campo Campanha do CRM, que em metade dos leads traz o nome do adset. O subtotal é a soma dos adsets, que é como o Meta particiona o gasto.</div>';
-
   /* Sinais preditivos — cada resposta é comparada com a média de quem
      respondeu AQUELA pergunta, não com a média geral. Quem responde o bot já
      qualifica muito mais que quem abandona; comparar com a base inteira
@@ -2077,12 +1998,35 @@ function renderVendas(c) {
     }),
     { note: 'A conversão por canal aparece no tooltip. Vendas de leads antigos entram no período pela data de fechamento, então a razão venda/lead do mesmo mês é aproximada.' });
 
+  // O canal entra na barra porque estes dois rankings misturam Meta e Google:
+  // 'Remarketing' é adset no Meta e existe campanha de remarketing no Google,
+  // e sem a marca do canal as duas leituras se confundem.
+  // Fora do Meta o campo 'público' guarda o NOME DA CAMPANHA — é a atribuição
+  // mais fina que o Google dá. E o mesmo nome chega escrito de três jeitos
+  // ('ibr_discovery_max_conv_br_01_rmkt', o mesmo com data, e a versão com
+  // barras), o que espalharia uma campanha em três barras. O tokenizador
+  // reduz os três ao mesmo rótulo. Rótulo de público do Meta passa intacto.
+  const audsMeta = new Set(Object.keys((M && M.adset) || {}));
+  const chaveRank = (key, val) =>
+    key === 'audience' && !audsMeta.has(val) ? rotuloCampanhaUTM(val) : val;
+
   const rank = (key, titulo) => {
     const m = new Map();
-    v.forEach(l => { const k = l[key]; if (!k || k === '—') return; const e = m.get(k) || { n: 0, r: 0 }; e.n++; e.r += l.price || 0; m.set(k, e); });
+    v.forEach(l => {
+      const k = chaveRank(key, l[key]); if (!k || k === '—' || k === SEM_CAMPANHA) return;
+      const e = m.get(k) || { n: 0, r: 0, canais: new Map() };
+      e.n++; e.r += l.price || 0;
+      e.canais.set(l.canal, (e.canais.get(l.canal) || 0) + 1);
+      m.set(k, e);
+    });
     return barlist([...m.entries()].sort((a, b) => b[1].r - a[1].r)
-      .map(([k, e]) => ({ k, v: e.r, cls: 'lead', label: kbrl(e.r), fat: `${e.n} venda(s)` })),
-      { note: `${int(v.filter(l => !l[key] || l[key] === '—').length)} venda(s) do período sem ${titulo} registrado no CRM.` });
+      .map(([k, e]) => {
+        const canais = [...e.canais.entries()].sort((a, b) => b[1] - a[1]);
+        return { k, v: e.r, cls: canalDot(canais[0][0]), dot: canalDot(canais[0][0]),
+                 label: kbrl(e.r), fat: `${e.n} venda(s)`,
+                 tip: `${k} · ${canais.map(([c, n]) => `${n} de ${c}`).join(' · ')}` };
+      }),
+      { note: `${int(v.filter(l => !l[key] || l[key] === '—').length)} venda(s) do período sem ${titulo} registrado no CRM. A bolinha é o canal de origem: público e criativo do <b>Google</b> aparecem com o nome da campanha dele, porque ali não existe adset separado.` });
   };
   $('#vendas-aud').innerHTML = rank('audience', 'público');
   $('#vendas-cri').innerHTML = rank('creative', 'criativo');

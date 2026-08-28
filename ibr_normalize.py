@@ -115,17 +115,39 @@ def _match_audience(value, side):
     return None
 
 
+# Marcas que identificam campanha de FORA do Meta. As regras de público acima
+# descrevem adsets do Meta; o Google não tem adset nesta conta, e o nome da
+# campanha dele colide com elas: o 'rmkt' dentro de
+# 'ibr_discovery_max_conv_br_01_rmkt' casa com a regra do público 'Remarketing'
+# e creditava ao adset do Meta 408 leads que são do Google — e, junto com eles,
+# as vendas, no ranking de "Vendas por público".
+#
+# A checagem é pela string da campanha, não pelo canal do lead: lead sem
+# rastreio carrega o mesmo slug do Google, e lead do Meta às vezes chega com
+# canal errado. Quem sabe de onde veio é o nome da campanha.
+_MARCAS_FORA_DO_META = ("discovery", "max_conv", "pmax", "brandterms", "search",
+                        "_sch_", "regua_de_remarketing")
+
+
+def _fora_do_meta(campanha):
+    s = slug(campanha)
+    return any(m in s for m in _MARCAS_FORA_DO_META)
+
+
 def normalize_audience_kommo(campanha):
     """Campo 'Campanha' do Kommo → público canônico.
 
     O campo carrega ora o adset ('publico_interesses_alto_padrão'), ora o nome
-    da campanha ('ibr_discovery_max_conv_br_01_rmkt'); as regras cobrem os dois.
+    da campanha ('IBR | CONVERSAO LP | 01 | PUBLICO MORNO 3'); as regras cobrem
+    os dois. Campanha de outro canal não passa pelas regras — devolve o próprio
+    nome, que para o Google é a atribuição mais fina que existe.
     """
-    hit = _match_audience(campanha, 1)
-    if hit:
-        return hit
     if _is_placeholder(slug(campanha)):
         return SEM_DADO
+    if not _fora_do_meta(campanha):
+        hit = _match_audience(campanha, 1)
+        if hit:
+            return hit
     return str(campanha).replace("+", " ").strip()
 
 
