@@ -183,6 +183,19 @@ td{padding:10px 13px;font-size:12.5px;color:var(--ink2)}
 td.num,th.num{text-align:right;font-family:var(--f-mono);font-variant-numeric:tabular-nums}
 td b,td strong{color:var(--ink);font-weight:700}
 tfoot td{border-top:1px solid var(--line);font-weight:700;color:var(--ink);background:var(--track)}
+/* ── funil por canal ────────────────────────────────── */
+.seg button i{font-style:normal;font-weight:400;opacity:.6;margin-left:6px;font-family:var(--f-mono);font-size:11px}
+.fhead{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;
+ margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--line2)}
+.fhead h4{font-size:15px;font-weight:700;color:var(--ink)}
+.fhead .cap{text-transform:none;font-size:11px;letter-spacing:0}
+/* A linha de grupo do cabeçalho não gruda no topo: duas linhas sticky em
+   top:0 se sobrepõem e o nome do funil come o nome da coluna. */
+thead tr.grp th{position:static;text-align:center;color:var(--accent);font-size:10px;
+ background:var(--surface);border-bottom:none;padding-bottom:4px}
+thead tr.grp th:empty{background:var(--surface)}
+.c2 b{display:block;font-weight:700;color:var(--ink);font-family:var(--f-mono)}
+.c2 span{display:block;font-size:11px;color:var(--mut);font-family:var(--f-mono);margin-top:1px;font-weight:500}
 .tag{display:inline-block;font-family:var(--f-mono);font-size:10px;font-weight:700;padding:3px 9px;border-radius:999px;
  background:var(--track);color:var(--ink2);white-space:nowrap}
 .tag.meta{background:color-mix(in srgb,var(--accent) 20%,transparent);color:var(--ink)}
@@ -415,12 +428,18 @@ tfoot td{border-top:1px solid var(--line);font-weight:700;color:var(--ink);backg
           <div class="pyr" id="pyr-sdr"></div><div id="rates-sdr"></div></div>
         <div class="card span6"><div class="ch"><div><h3>Funil Closer</h3><div class="sub" id="funis-closer-sub">Reunião realizada → venda ganha</div></div></div>
           <div class="pyr" id="pyr-closer"></div><div id="rates-closer"></div></div>
-        <div class="card span12"><div class="ch"><div><h3>Funil SDR por canal</h3><div class="sub" id="fc-sdr-sub">As mesmas etapas acima, abertas pela origem do lead</div></div></div>
-          <div class="tblwrap" style="border:none;box-shadow:none"><table id="fc-sdr"></table></div>
-          <div id="fc-sdr-note"></div></div>
-        <div class="card span12"><div class="ch"><div><h3>Funil Closer por canal</h3><div class="sub" id="fc-closer-sub">Da reunião que virou negociação até a venda, pela origem do lead</div></div></div>
-          <div class="tblwrap" style="border:none;box-shadow:none"><table id="fc-closer"></table></div>
-          <div id="fc-closer-note"></div></div>
+        <div class="card span12"><div class="ch"><div><h3>Funil por canal de origem</h3><div class="sub">Os mesmos funis acima, recortados pela origem do lead — escolha o canal</div></div></div>
+          <div id="fc-chips" style="margin-bottom:4px"></div>
+          <div class="grid" style="margin-top:16px;gap:22px">
+            <div class="span6"><div class="fhead"><h4>Funil SDR</h4><span class="cap" id="fc-cap-sdr"></span></div>
+              <div class="pyr" id="fc-pyr-sdr"></div></div>
+            <div class="span6"><div class="fhead"><h4>Funil Closer</h4><span class="cap" id="fc-cap-clo"></span></div>
+              <div class="pyr" id="fc-pyr-clo"></div><div id="fc-clo-rates"></div></div>
+          </div>
+          <div id="fc-note"></div></div>
+        <div class="card span12"><div class="ch"><div><h3>Comparativo entre canais</h3><div class="sub">Todos os canais lado a lado, nas mesmas etapas</div></div></div>
+          <div class="tblwrap" style="border:none;box-shadow:none"><table id="fc-cmp"></table></div>
+          <div id="fc-cmp-note"></div></div>
         <div class="card span12"><div class="ch"><div><h3>Funil completo</h3><div class="sub">Da entrada do lead até a venda — conversão acumulada</div></div></div>
           <div class="pyr" id="pyr-full"></div></div>
         <div class="card span6"><div class="ch"><div><h3>Perdas nos funis de entrada</h3><div class="sub" id="loss-sdr-sub">—</div></div></div><div id="loss-sdr"></div></div>
@@ -558,7 +577,7 @@ const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'o
 const monLabel = m => MESES[+m.slice(5, 7) - 1] + '/' + m.slice(2, 4);
 
 /* ── estado ──────────────────────────────────────────────────────────────── */
-const STATE = { period: 'mes', from: null, to: null, tab: 'diagnostico' };
+const STATE = { period: 'mes', from: null, to: null, tab: 'diagnostico', canal: 'todos' };
 
 const PERIODS = [
   ['7d',  'Últimos 7 dias'],
@@ -849,8 +868,14 @@ function barlist(rows, opt = {}) {
     </div>`).join('') + '</div>' + (opt.note ? `<div class="note">${opt.note}</div>` : '');
 }
 
-function table(el, cols, rows, foot) {
-  const head = '<thead><tr>' + cols.map(c => `<th${c.num ? ' class="num"' : ''}>${esc(c.t)}</th>`).join('') + '</tr></thead>';
+function table(el, cols, rows, foot, groups) {
+  // Linha opcional de grupo acima do cabeçalho ('Funil SDR' cobrindo quatro
+  // colunas). Cada grupo declara o próprio colspan; a soma tem que fechar com
+  // cols.length, senão a tabela desalinha silenciosamente.
+  const grp = groups
+    ? '<tr class="grp">' + groups.map(g => `<th colspan="${g.span}">${esc(g.t)}</th>`).join('') + '</tr>'
+    : '';
+  const head = '<thead>' + grp + '<tr>' + cols.map(c => `<th${c.num ? ' class="num"' : ''}>${esc(c.t)}</th>`).join('') + '</tr></thead>';
   const body = rows.length
     ? '<tbody>' + rows.map(r => '<tr>' + r.map((c, i) => `<td${cols[i] && cols[i].num ? ' class="num"' : ''}>${c}</td>`).join('') + '</tr>').join('') + '</tbody>'
     : `<tbody><tr><td colspan="${cols.length}"><div class="empty">sem dados no período</div></td></tr></tbody>`;
@@ -1642,9 +1667,15 @@ function pyramid(el, steps) {
   const top = steps[0] ? steps[0].n : 0;
   el.innerHTML = steps.map((s, i) => {
     const prev = i ? steps[i - 1].n : s.n;
+    // O degrau pode declarar o próprio denominador. No funil por canal duas
+    // etapas do Kommo saem do MESMO pai — 'Qualificação' e 'Lead qualificado'
+    // são leituras sobre leads, 'Sinal verde' e 'Venda' sobre proposta —, e
+    // encadear uma na outra escreveria "300% da etapa anterior".
+    const den = s.den != null ? s.den : prev;
+    const lab = s.denLab || 'da etapa anterior';
     return `<div class="pstep ${s.win ? 'win' : ''}" style="--w:${top ? (100 * s.n / top).toFixed(1) : 0}%">
       <div class="pstep-l">${esc(s.k)}${s.hint ? `<small>${esc(s.hint)}</small>` : ''}</div>
-      <div class="pstep-n">${int(s.n)}<span>${i ? pctS(s.n, prev) + ' da etapa anterior' : '100%'}</span></div>
+      <div class="pstep-n">${int(s.n)}<span>${i ? pctS(s.n, den) + ' ' + esc(lab) : '100%'}</span></div>
     </div>`;
   }).join('');
 }
@@ -1666,101 +1697,138 @@ function lossList(el, sub, leads) {
   el.innerHTML = barlist(rows);
 }
 
-/* ── os dois funis abertos por canal ──────────────────────────────────────────
-   Estas duas tabelas são as pirâmides acima vistas pela origem do lead. Elas
-   reusam exatamente os filtros do computeCore, só que agrupados por `canal`,
-   e por isso o rodapé de cada coluna bate com o degrau correspondente da
-   pirâmide. Divergência entre os dois é bug, não arredondamento.
-   O canal é o normalizado pelo ibr_normalize a partir da UTM/origem do CRM —
-   o mesmo campo que a aba Diagnóstico e a aba Vendas usam. */
+/* ── funil por canal de origem ────────────────────────────────────────────────
+   O recorte por canal é a mesma pergunta das pirâmides acima feita uma origem
+   por vez, então ele reusa a mesma pirâmide em vez de virar tabela: quem já
+   leu o funil do período não precisa aprender outro formato para lê-lo por
+   canal. Um seletor troca o recorte; o comparativo embaixo é o contraponto,
+   porque com o seletor só se enxerga um canal de cada vez.
+
+   As etapas são as do Kommo, a pedido — inclusive 'Qualificação' e 'Sinal
+   verde', que contam quem está PARADO ali hoje e não quem passou por ali. Por
+   isso elas não entram na cadeia: cada uma pendura no mesmo pai da etapa
+   acumulada ao lado (leads e proposta), e o denominador vai escrito no degrau.
+   Sem isso a pirâmide diria "300% da etapa anterior", que foi exatamente o
+   motivo de Sinal verde ter saído da pirâmide do Closer no passado. */
 const NAO_RASTREADO = 'Não rastreado';
 const MIN_CANAL = 25;
 
-// "Não rastreado" desce sempre para a última linha. Ele não é um canal que se
-// possa comparar com Meta ou Google — é a parte cega da medição. Deixá-lo
-// disputar o topo por volume empurraria para baixo justamente o canal sobre o
-// qual a operação decide aumentar ou cortar verba.
+// Só nesta seção o rótulo é "Sem origem", como no desenho. O resto do dash
+// continua dizendo "Não rastreado", e o valor no dado é sempre esse.
+const CANAL_LABEL = { [NAO_RASTREADO]: 'Sem origem' };
+const canalLab = k => CANAL_LABEL[k] || k;
+
+// "Não rastreado" desce sempre para o fim. Ele não é um canal que se compare
+// com Meta ou Google — é a parte cega da medição, e deixá-lo disputar o topo
+// por volume empurraria para baixo a linha sobre a qual se decide verba.
 const ordenaCanais = (mapa, peso) => [...mapa.entries()].sort((a, b) =>
   (a[0] === NAO_RASTREADO) - (b[0] === NAO_RASTREADO) || peso(b[1]) - peso(a[1]));
 
-const canalCel = k => `<span class="dot ${canalDot(k)}"></span><b>${esc(k)}</b>`;
+const canalCel = k => `<span class="dot ${canalDot(k)}"></span><b>${esc(canalLab(k))}</b>`;
 
-// Taxa de amostra pequena não vai em negrito: com 6 leads, um qualificado a
-// mais move a taxa 17 pontos, e o negrito daria a ela um peso que não tem.
-const taxaCel = (a, b, n) => b > 0 ? (n >= MIN_CANAL ? `<b>${pctS(a, b)}</b>` : pctS(a, b)) : '—';
+// Célula de duas linhas: quantitativo em cima, conversão embaixo.
+const cel2 = (n, den) => `<div class="c2"><b>${int(n)}</b>${
+  den != null && den > 0 ? `<span>${pctS(n, den)}</span>` : ''}</div>`;
 
 function funisPorCanal(c) {
-  /* SDR — todas as colunas na mesma safra: leads criados dentro da janela. */
-  const sdr = new Map();
-  const celS = k => { if (!sdr.has(k)) sdr.set(k, { n: 0, q: 0, a: 0, r: 0 }); return sdr.get(k); };
-  c.ent.forEach(l => {
-    const e = celS(l.canal); e.n++;
-    if (l.qualified) e.q++;
-    if (l.reuniao_agendada) e.a++;
-    if (l.reuniao_realizada) e.r++;
-  });
-  table($('#fc-sdr'),
-    [{ t: 'Canal' }, { t: 'Leads', num: 1 }, { t: 'Qualif.', num: 1 }, { t: 'Agend.', num: 1 },
-     { t: 'Realiz.', num: 1 }, { t: 'Qualificação', num: 1 }, { t: 'Agendamento', num: 1 },
-     { t: 'Comparec.', num: 1 }, { t: 'Lead → reunião', num: 1 }],
-    ordenaCanais(sdr, v => v.n).map(([k, v]) => [
-      canalCel(k), int(v.n), int(v.q), int(v.a), int(v.r),
-      taxaCel(v.q, v.n, v.n), taxaCel(v.a, v.q, v.n), taxaCel(v.r, v.a, v.n), taxaCel(v.r, v.n, v.n)
-    ]),
-    sdr.size ? ['Total', int(c.leads), int(c.qualif), int(c.agend), int(c.realiz),
-                pctS(c.qualif, c.leads), pctS(c.agend, c.qualif), pctS(c.realiz, c.agend),
-                pctS(c.realiz, c.leads)] : null);
+  const parado = (arr, st) => arr.filter(l => l.status === st).length;
+  const ehProp = l => l.proposta || PROPOSTA_STAGES.includes(l.status);
 
-  const semCanal = (sdr.get(NAO_RASTREADO) || { n: 0 }).n;
-  $('#fc-sdr-sub').textContent =
-    `${plural(sdr.size, 'origem', 'origens')} no período · ${pctS(semCanal, c.leads)} dos leads sem canal no CRM`;
-  $('#fc-sdr-note').innerHTML = `<div class="note">Cada coluna é o mesmo filtro do degrau de cima,
-    agrupado pelo canal do lead. As taxas seguem a cadeia do funil: <b>qualificação</b> sobre leads,
-    <b>agendamento</b> sobre qualificados, <b>comparecimento</b> sobre agendados. A última coluna
-    atravessa o funil inteiro e é a que compara canais de verdade — taxa alta numa etapa isolada
-    pode ser só um filtro frouxo na etapa anterior. Só vai em negrito a taxa de canal com
-    <b>${MIN_CANAL}+ leads</b> na janela. <b>Não rastreado</b> fica por último de propósito: é lead
-    que chegou sem UTM, não um canal — o que ele mostra é o tamanho do ponto cego.</div>`;
+  /* ── seletor ── */
+  const cont = new Map();
+  c.ent.forEach(l => cont.set(l.canal, (cont.get(l.canal) || 0) + 1));
+  c.clo.forEach(l => { if (!cont.has(l.canal)) cont.set(l.canal, 0); });
+  c.vend.forEach(l => { if (!cont.has(l.canal)) cont.set(l.canal, 0); });
+  const canais = ordenaCanais(cont, v => v).map(([k]) => k);
+  // Canal escolhido some quando muda o período. Voltar para "todos" é melhor
+  // que mostrar um funil zerado sem explicar por quê.
+  if (STATE.canal !== 'todos' && !canais.includes(STATE.canal)) STATE.canal = 'todos';
 
-  /* Closer — cards e propostas são a safra criada na janela; vendas e receita
-     entram por data de fechamento, que é a mesma regra da pirâmide do Closer.
-     São duas safras diferentes na mesma linha, e o rodapé avisa. */
-  const clo = new Map();
-  const celC = k => { if (!clo.has(k)) clo.set(k, { n: 0, p: 0, v: 0, rec: 0, cv: 0 }); return clo.get(k); };
-  c.clo.forEach(l => {
-    const e = celC(l.canal); e.n++;
-    if (l.proposta || PROPOSTA_STAGES.includes(l.status)) e.p++;
-  });
-  c.vend.forEach(l => {
-    const e = celC(l.canal); e.v++; e.rec += l.price || 0;
-    if ((l.price || 0) > 0) e.cv++;
-  });
-  table($('#fc-closer'),
-    [{ t: 'Canal' }, { t: 'Cards', num: 1 }, { t: 'Propostas', num: 1 }, { t: 'Vendas', num: 1 },
-     { t: 'Receita', num: 1 }, { t: 'Taxa proposta', num: 1 }, { t: 'Card → venda', num: 1 },
-     { t: 'Ticket', num: 1 }],
-    // A ordem acompanha a da tabela do SDR (volume de cards) para que as duas
-    // se leiam na mesma sequência de canais, e não por receita.
-    ordenaCanais(clo, v => v.n).map(([k, v]) => [
-      canalCel(k), int(v.n), int(v.p), v.v ? `<b>${int(v.v)}</b>` : '0',
-      v.rec ? kbrl(v.rec) : '—',
-      taxaCel(v.p, v.n, v.n), taxaCel(v.v, v.n, v.n), v.cv ? brl(v.rec / v.cv) : '—'
-    ]),
-    clo.size ? ['Total', int(c.clo.length), int(c.prop), int(c.vendas), kbrl(c.receita),
-                pctS(c.prop, c.clo.length), pctS(c.vendas, c.clo.length),
-                c.ticket ? brl(c.ticket) : '—'] : null);
+  $('#fc-chips').innerHTML = '<div class="seg">' +
+    [['todos', 'Todos os canais', c.ent.length]]
+      .concat(canais.map(k => [k, canalLab(k), cont.get(k)]))
+      .map(([v, lab, n]) => `<button data-c="${esc(v)}" class="${STATE.canal === v ? 'on' : ''}">${esc(lab)}<i>${int(n)}</i></button>`)
+      .join('') + '</div>';
+  $$('#fc-chips button').forEach(b => b.onclick = () => { STATE.canal = b.dataset.c; renderAll(); });
 
-  const semCanalClo = (clo.get(NAO_RASTREADO) || { n: 0 }).n;
-  $('#fc-closer-sub').textContent =
-    `${plural(clo.size, 'origem', 'origens')} no período · ${pctS(semCanalClo, c.clo.length)} dos cards sem canal no CRM`;
-  $('#fc-closer-note').innerHTML = `<div class="note"><b>Cards</b> e <b>propostas</b> contam o que
-    foi criado na janela; <b>vendas</b> e <b>receita</b> entram pela data de fechamento — é a mesma
-    regra da pirâmide do Closer, e significa que a venda desta semana costuma ser de um card aberto
-    semanas atrás. Em janela curta, portanto, <b>card → venda</b> é uma razão entre duas safras, não
-    a conversão daquele grupo de cards; em janela longa ela converge. O <b>ticket</b> divide só pelas
-    vendas com valor preenchido no CRM. O canal aqui é o do card do Closer: quando o lead avança, o
-    Kommo recria o negócio, e card recriado sem a origem cai em <b>não rastreado</b> mesmo que o
-    card de entrada da mesma pessoa tivesse canal.</div>`;
+  const sel = STATE.canal;
+  const fil = arr => sel === 'todos' ? arr : arr.filter(l => l.canal === sel);
+  const E = fil(c.ent), C = fil(c.clo), V = fil(c.vend);
+  const nome = sel === 'todos' ? 'Todos os canais' : canalLab(sel);
+  const janela = c.w.label + (c.w.partial ? ' (parcial — até hoje)' : '');
+
+  /* ── funil SDR ── */
+  const qualif = E.filter(l => l.qualified).length;
+  const agend  = E.filter(l => l.reuniao_agendada).length;
+  const realiz = E.filter(l => l.reuniao_realizada).length;
+  $('#fc-cap-sdr').textContent = `${nome} · ${int(E.length)} leads · ${janela}`;
+  pyramid($('#fc-pyr-sdr'), [
+    { k: 'Leads', n: E.length, hint: 'entradas no SDR + Nutrição' },
+    { k: 'Qualificação', n: parado(E, S.SDR.QUALIFIC), den: E.length, denLab: 'dos leads',
+      hint: 'parados nesta etapa hoje' },
+    { k: 'Lead qualificado', n: qualif, den: E.length, denLab: 'dos leads',
+      hint: 'chegaram à qualificação ou além' },
+    { k: 'Reunião agendada', n: agend, den: qualif, denLab: 'dos qualificados' },
+    { k: 'Reunião realizada', n: realiz, den: agend, denLab: 'das agendadas', win: 1 }
+  ]);
+
+  /* ── funil Closer ── */
+  const prop = C.filter(ehProp).length;
+  $('#fc-cap-clo').textContent = `${nome} · ${int(C.length)} entradas · ${int(V.length)} vendas`;
+  pyramid($('#fc-pyr-clo'), [
+    { k: 'Entradas', n: C.length, hint: 'cards criados no Closer' },
+    { k: 'Proposta', n: prop, den: C.length, denLab: 'das entradas',
+      hint: 'proposta, follow-up, sinal verde ou dados' },
+    { k: 'Sinal verde', n: parado(C, S.CLO.VERDE), den: prop, denLab: 'das propostas',
+      hint: 'parados nesta etapa hoje' },
+    { k: 'Venda ganha', n: V.length, den: prop, denLab: 'das propostas', win: 1 }
+  ]);
+  ratesBox($('#fc-clo-rates'), [
+    ['proposta → venda', pctS(V.length, prop)],
+    ['entrada → venda', pctS(V.length, C.length)],
+    ['receita', kbrl(V.reduce((t, l) => t + (l.price || 0), 0))]
+  ]);
+
+  $('#fc-note').innerHTML = `<div class="note"><b>Qualificação</b> e <b>Sinal verde</b> são etapas do
+    Kommo e contam quem está parado ali <b>hoje</b>, não quem passou por ali — card que estava em
+    sinal verde e fechou saiu do status. Por isso as duas não puxam a etapa seguinte: elas medem
+    sobre o mesmo pai da etapa acumulada vizinha (leads e proposta), e o degrau diz qual é o
+    denominador. Ler "sinal verde → venda" como conversão daria número errado.</div>`;
+
+  /* ── comparativo ── */
+  const lin = k => {
+    const e = c.ent.filter(l => l.canal === k), o = c.clo.filter(l => l.canal === k),
+          v = c.vend.filter(l => l.canal === k);
+    const q = e.filter(l => l.qualified).length, a = e.filter(l => l.reuniao_agendada).length,
+          r = e.filter(l => l.reuniao_realizada).length, p = o.filter(ehProp).length;
+    return { k, n: e.length, q, a, r, cards: o.length, p, v: v.length,
+             rec: v.reduce((t, l) => t + (l.price || 0), 0) };
+  };
+  const linhas = canais.map(lin);
+  const tot = linhas.reduce((t, x) => ({
+    n: t.n + x.n, q: t.q + x.q, a: t.a + x.a, r: t.r + x.r,
+    cards: t.cards + x.cards, p: t.p + x.p, v: t.v + x.v, rec: t.rec + x.rec
+  }), { n: 0, q: 0, a: 0, r: 0, cards: 0, p: 0, v: 0, rec: 0 });
+  const cels = x => [cel2(x.n), cel2(x.q, x.n), cel2(x.a, x.q), cel2(x.r, x.a),
+                     cel2(x.cards), cel2(x.p, x.cards), cel2(x.v, x.p), x.rec ? kbrl(x.rec) : '—'];
+
+  table($('#fc-cmp'),
+    [{ t: 'Canal' }, { t: 'Leads', num: 1 }, { t: 'Qualificado', num: 1 },
+     { t: 'Reun. agendada', num: 1 }, { t: 'Reun. realizada', num: 1 },
+     { t: 'Entradas', num: 1 }, { t: 'Proposta', num: 1 }, { t: 'Venda', num: 1 },
+     { t: 'Receita', num: 1 }],
+    linhas.map(x => [canalCel(x.k)].concat(cels(x))),
+    ['Total'].concat(cels(tot)),
+    [{ t: '', span: 1 }, { t: 'Funil SDR', span: 4 }, { t: 'Funil Closer', span: 4 }]);
+
+  $('#fc-cmp-note').innerHTML = `<div class="note">Em cada célula o número de cima é o
+    <b>quantitativo</b> e o de baixo a <b>conversão sobre a etapa anterior</b> — qualificado sobre
+    leads, agendada sobre qualificado, realizada sobre agendada, proposta sobre entradas, venda
+    sobre proposta. <b>Leads</b> e <b>entradas</b> não têm taxa: são o começo de cada funil.
+    Repare que <b>entradas</b> conta card do Closer criado na janela e <b>venda</b> conta por data
+    de fechamento — a venda desta semana costuma ser de um card aberto semanas atrás, então em
+    janela curta essa razão cruza duas safras; em janela longa ela converge. Canal com poucos leads
+    produz taxa instável: um qualificado a mais move 17 pontos numa base de 6.</div>`;
 }
 
 function renderFunis(c) {
