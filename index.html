@@ -344,6 +344,9 @@ thead tr.grp th:empty{background:var(--surface)}
       <div class="grid" style="margin-top:14px">
         <div class="card span12"><div class="ch"><div><h3>Evolução diária</h3><div class="sub" id="diag-daily-sub">Leads, qualificados e vendas por dia</div></div></div>
           <div class="chartbox tall"><canvas id="ch-daily"></canvas></div></div>
+        <div class="card span12"><div class="ch"><div><h3>Eficiência financeira por canal</h3><div class="sub">Quanto custa e quanto volta cada origem — CPL, CPO, CAC e retorno</div></div><span class="cap">só Meta e Google têm gasto medido</span></div>
+          <div class="tblwrap" style="border:none;box-shadow:none"><table id="diag-econ"></table></div>
+          <div id="diag-econ-note"></div></div>
         <div class="card span6"><div class="ch"><div><h3>Qualificação por canal</h3><div class="sub">Volume de leads e taxa de qualificação por origem</div></div></div>
           <div id="diag-canal"></div></div>
         <div class="card span6"><div class="ch"><div><h3>Performance do bot</h3><div class="sub">Quantos leads concluem o pré-atendimento</div></div></div>
@@ -566,7 +569,10 @@ const brl = v => 'R$ ' + nf.format(Math.round(v || 0));
 const pct = (a, b) => (b > 0 ? (100 * a / b) : 0);
 const pctS = (a, b, d = 0) => (b > 0 ? (100 * a / b).toFixed(d).replace('.', ',') + '%' : '—');
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const kbrl = v => v >= 1000 ? 'R$ ' + (v / 1000).toFixed(v >= 10000 ? 0 : 1).replace('.', ',') + 'k' : brl(v);
+// Acima de um milhão o 'k' deixa de abreviar: 'R$ 1862k' obriga a contar casa.
+const kbrl = v => v >= 1e6  ? 'R$ ' + (v / 1e6).toFixed(v >= 1e7 ? 0 : 1).replace('.', ',') + ' mi'
+               : v >= 1000 ? 'R$ ' + (v / 1000).toFixed(v >= 10000 ? 0 : 1).replace('.', ',') + 'k'
+               : brl(v);
 const plural = (n, um, muitos) => int(n) + ' ' + (n === 1 ? um : muitos);
 
 const dt = ts => new Date(ts * 1000);
@@ -1051,6 +1057,9 @@ function buildMethodology() {
     ['CPL', 'Investimento de mídia paga ÷ leads de <b>Meta + Google</b>. Não divide pelo total de leads, que inclui os não rastreados.', 'CPL = (investimento Meta + Google) ÷ (leads Meta + Google)'],
     ['CPL qualificado', 'O mesmo investimento ÷ os leads de mídia paga que qualificaram.', 'CPLq = investimento pago ÷ qualificados de mídia paga'],
     ['Custo por reunião', 'Investimento ÷ <b>todas</b> as reuniões realizadas do período. Conta a reunião que aconteceu, não a agendada — o no-show já está descontado, e é por isso que ele fica bem acima do CPL. Diferente do CPL, o divisor não se restringe a mídia paga: reunião de lead orgânico ou não rastreado também entra, então o número é um <b>piso</b> — o custo da reunião que a mídia de fato pagou é maior.', 'CPR = investimento pago ÷ reuniões realizadas'],
+    ['Oportunidade', 'Lead que chegou a <b>reunião realizada</b>. É o ponto em que ele deixa de ser lead e vira negócio em andamento — o no-show já está descontado. Serve de divisor do CPO.'],
+    ['CPO · custo por oportunidade', 'Investimento do canal ÷ oportunidades <b>daquele canal</b>. Não confundir com o <b>Custo por reunião</b> da faixa de KPIs: aquele divide o investimento total por <b>todas</b> as reuniões do período, inclusive as de lead orgânico e não rastreado, e por isso é um piso. O CPO por canal só cruza gasto e reunião da mesma origem, e é o número honesto para comparar canais entre si.', 'CPO(canal) = investimento do canal ÷ reuniões realizadas do canal'],
+    ['CAC, CPO e ROAS por canal', 'A tabela <b>Eficiência financeira por canal</b>, no Diagnóstico, reparte a escada de custo por origem. Só <b>Meta</b> e <b>Google</b> têm gasto medido: nos demais canais as colunas de custo ficam <b>em branco</b>, não em zero — o custo de um lead orgânico existe, só não passa por estas APIs. O rodapé soma apenas mídia paga, porque é a única linha em que numerador e denominador falam do mesmo conjunto de leads. Cada canal pago herda as ressalvas do CAC e do ROAS gerais: <b>teto</b> e <b>piso</b>, porque a venda sem rastreio cai em "Não rastreado". Como a venda entra por data de fechamento e o gasto pelo dia em que saiu, janela mais curta que o ciclo de vendas compara safras diferentes.', 'CAC(canal) = investimento do canal ÷ vendas do canal · ROAS(canal) = receita do canal ÷ investimento do canal'],
     ['Conversão SDR', 'Fatia dos leads de entrada do período que chegou a <b>reunião realizada</b>. É o resultado do time de SDR de ponta a ponta: qualificar, agendar e fazer comparecer.', 'conversão SDR = reuniões realizadas ÷ leads de entrada'],
     ['Conversão Closer', 'Fatia das reuniões realizadas que virou <b>venda</b>. Como a venda entra no período pela data de fechamento e a reunião pela data de criação do lead, os dois números são de safras um pouco diferentes — em mês de volume estável a razão é boa, em mês de virada ela é aproximada.', 'conversão Closer = vendas ÷ reuniões realizadas'],
     ['CAC', 'Investimento ÷ vendas cujo lead tem <b>Meta Ads</b> ou <b>Google Ads</b> como origem. É um <b>teto</b>: parte das vendas entrou sem rastreio e está contada como "não rastreado", então o CAC real é menor que o exibido.', 'CAC = investimento pago ÷ vendas com canal Meta ou Google'],
@@ -1083,6 +1092,120 @@ function delta(cur, prev, invert = false) {
   if (!isFinite(d) || Math.abs(d) < 0.5) return '<span class="dlt flat">estável</span>';
   const good = invert ? d < 0 : d > 0;
   return `<span class="dlt ${good ? 'up' : 'down'}">${d > 0 ? '▲' : '▼'} ${Math.abs(d).toFixed(0)}%</span>`;
+}
+
+/* ── economia por canal ───────────────────────────────────────────────────────
+   As outras leituras por canal respondem "de onde vem o lead" e "até onde ele
+   anda". Esta responde a que decide verba: quanto custa e quanto volta cada
+   origem. É a mesma escada de custo do topo do Diagnóstico — CPL, CPL
+   qualificado, CPO, CAC — repartida por canal, mais a receita e o retorno.
+
+   Gasto existe só no Meta e no Google. Nos demais canais as colunas de custo
+   ficam em branco, não em zero: zero se lê como "sai de graça", e o que se sabe
+   sobre o custo de um lead orgânico ou não rastreado é que ele não está medido
+   aqui. Eles seguem na tabela porque a receita deles é real — sumir com a linha
+   faria a soma da coluna Receita não bater com a do dash.
+
+   O rodapé fecha só a mídia paga: é a única linha em que todas as colunas falam
+   do mesmo conjunto de leads. Somar o orgânico ao divisor de um CPL baixaria o
+   custo do anúncio com lead que o anúncio não trouxe. */
+
+// Cada canal com verba diz de onde sai o próprio gasto. O Meta particiona por
+// adset e o Google por campanha; as duas somas cobrem a conta inteira daquela
+// API na janela, que é o que o total do topo já usa.
+const SPEND_CANAL = {
+  'Meta Ads':   w => spendIn(M && M.adset, w),
+  'Google Ads': w => spendIn(G && G.campaign, w)
+};
+
+/** Oportunidade = reunião realizada. É o momento em que o lead vira negócio de
+ *  verdade e passa para o Closer; o no-show já está descontado. */
+const ehOportunidade = l => !!l.reuniao_realizada;
+
+function economiaCanal(c) {
+  const canais = new Map();
+  const cel = k => {
+    if (!canais.has(k)) canais.set(k, { k, n: 0, q: 0, o: 0, v: 0, rec: 0 });
+    return canais.get(k);
+  };
+  c.ent.forEach(l => {
+    const e = cel(l.canal);
+    e.n++; if (l.qualified) e.q++; if (ehOportunidade(l)) e.o++;
+  });
+  // Venda entra pelo canal do lead que fechou, mesmo que o canal não tenha
+  // trazido nenhum lead na janela — venda de safra antiga é receita do período.
+  c.vend.forEach(l => { const e = cel(l.canal); e.v++; e.rec += l.price || 0; });
+  // Canal que gastou e não trouxe lead nenhum é o caso mais caro que existe, e
+  // some da tabela se depender de lead para aparecer.
+  Object.keys(SPEND_CANAL).forEach(k => { if (SPEND_CANAL[k](c.w) > 0) cel(k); });
+
+  const linhas = [...canais.values()].map(e =>
+    Object.assign({}, e, { inv: SPEND_CANAL[e.k] ? SPEND_CANAL[e.k](c.w) : 0 }));
+
+  // Quem tem verba encabeça, porque é sobre essa linha que se decide. No resto,
+  // a ordem é por RECEITA e não por volume: canal sem mídia entra na tabela
+  // justamente quando fecha venda, e ordenar por lead enterraria um Podcast com
+  // uma venda de seis dígitos embaixo de um "Yahoo" com um lead e nada. "Não
+  // rastreado" vai para o fim: ele não é um canal, é a parte cega da medição.
+  linhas.sort((a, b) =>
+    (a.k === NAO_RASTREADO) - (b.k === NAO_RASTREADO) ||
+    (b.inv > 0) - (a.inv > 0) || b.inv - a.inv ||
+    b.rec - a.rec || b.v - a.v || b.n - a.n);
+
+  const razao = (num, den) => den > 0 && num > 0 ? brl(num / den) : '—';
+  const cels = x => [
+    x.inv ? kbrl(x.inv) : '—',
+    int(x.n), razao(x.inv, x.n),
+    int(x.q), razao(x.inv, x.q),
+    int(x.o), razao(x.inv, x.o),
+    int(x.v), x.inv && x.v ? `<b>${brl(x.inv / x.v)}</b>` : '—',
+    x.rec ? kbrl(x.rec) : '—',
+    x.inv && x.rec ? `<b>${(x.rec / x.inv).toFixed(1).replace('.', ',')}x</b>` : '—'
+  ];
+
+  // O rodapé é Meta + Google, não a soma das linhas — ver o comentário do bloco.
+  const pago = linhas.filter(x => SPEND_CANAL[x.k]).reduce((t, x) => ({
+    inv: t.inv + x.inv, n: t.n + x.n, q: t.q + x.q,
+    o: t.o + x.o, v: t.v + x.v, rec: t.rec + x.rec
+  }), { inv: 0, n: 0, q: 0, o: 0, v: 0, rec: 0 });
+
+  table($('#diag-econ'),
+    [{ t: 'Canal' }, { t: 'Investimento', num: 1 },
+     { t: 'Leads', num: 1 }, { t: 'CPL', num: 1 },
+     { t: 'Qualif.', num: 1 }, { t: 'CPL qualif.', num: 1 },
+     { t: 'Oportun.', num: 1 }, { t: 'CPO', num: 1 },
+     { t: 'Vendas', num: 1 }, { t: 'CAC', num: 1 },
+     { t: 'Receita', num: 1 }, { t: 'ROAS', num: 1 }],
+    linhas.map(x => [canalCel(x.k)].concat(cels(x))),
+    ['<b>Mídia paga</b>'].concat(cels(Object.assign({ k: '' }, pago))),
+    [{ t: '', span: 1 }, { t: 'Verba', span: 1 }, { t: 'Lead', span: 2 },
+     { t: 'Qualificado', span: 2 }, { t: 'Oportunidade', span: 2 },
+     { t: 'Venda', span: 2 }, { t: 'Retorno', span: 2 }]);
+
+  // A comparação que a tabela existe para permitir, escrita: entre os canais
+  // com verba e venda, qual adquire cliente mais barato e qual devolve mais.
+  const comCac = linhas.filter(x => x.inv > 0 && x.v > 0);
+  const melhorCac = comCac.slice().sort((a, b) => a.inv / a.v - b.inv / b.v)[0];
+  const piorCac   = comCac.slice().sort((a, b) => b.inv / b.v - a.inv / a.v)[0];
+  const semVenda  = linhas.filter(x => x.inv > 0 && !x.v);
+  const frase = melhorCac && piorCac && melhorCac !== piorCac
+    ? `No período, <b>${esc(canalLab(melhorCac.k))}</b> compra cliente a ${brl(melhorCac.inv / melhorCac.v)} contra ${brl(piorCac.inv / piorCac.v)} de <b>${esc(canalLab(piorCac.k))}</b>. `
+    : '';
+  const alerta = semVenda.length
+    ? `<b>${semVenda.map(x => esc(canalLab(x.k))).join(' e ')}</b> gastou ${kbrl(semVenda.reduce((t, x) => t + x.inv, 0))} sem venda fechada na janela — em ciclo longo isso é normal num mês, não em três. `
+    : '';
+
+  $('#diag-econ-note').innerHTML = `<div class="note">${frase}${alerta}
+    <b>Oportunidade</b> é reunião <b>realizada</b> — o no-show já saiu, e é por isso que o CPO fica
+    bem acima do CPL qualificado. Cada custo divide o gasto do canal pelo que <b>aquele</b> canal
+    entregou, então o CPO daqui não é o "Custo por reunião" do topo da página, que divide o gasto
+    total por <b>todas</b> as reuniões, inclusive as de lead orgânico.
+    <b>CAC e ROAS por canal herdam as ressalvas do topo</b>: venda sem rastreio cai em "Não
+    rastreado", então o CAC de cada canal pago é <b>teto</b> e o ROAS é <b>piso</b>.
+    Canal sem investimento fica com as colunas de custo em branco — o custo dele existe, só não é
+    medido aqui. E a venda entra pela <b>data de fechamento</b> enquanto o gasto entra pelo dia em
+    que saiu: numa janela mais curta que o ciclo de vendas, o CAC compara safras diferentes e
+    exagera para os dois lados.</div>`;
 }
 
 function renderDiagnostico(c) {
@@ -1183,6 +1306,8 @@ function renderDiagnostico(c) {
   $('#diag-canal').innerHTML = barlist(canalRows, {
     note: melhorCanal ? `Melhor taxa de qualificação entre canais com volume: <b>${esc(melhorCanal[0])}</b> com ${pctS(melhorCanal[1].q, melhorCanal[1].n)}.` : ''
   });
+
+  economiaCanal(c);
 
   /* performance do bot de pré-atendimento */
   const tag = (l, t) => (l.tags || []).includes(t);

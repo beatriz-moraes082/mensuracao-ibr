@@ -74,7 +74,13 @@ fórmula. Vale destacar três coisas que não são óbvias:
 - **Venda** é só o status `142` do funil **Closer**. O mesmo `142` no SDR e na
   Importação RD significa "reunião realizada" e não entra.
 - **CAC e ROAS** são teto e piso, não valores exatos: parte das vendas entra sem
-  rastreio e fica fora do numerador/denominador.
+  rastreio e fica fora do numerador/denominador. A tabela **Eficiência
+  financeira por canal**, no Diagnóstico, reparte essa escada — CPL, CPL
+  qualificado, CPO, CAC e ROAS — por origem, e herda a mesma ressalva.
+- **CPO** é custo por *oportunidade*, e oportunidade é **reunião realizada**.
+  Não confundir com o KPI *Custo por reunião* do topo: aquele divide o gasto
+  total por todas as reuniões, inclusive as de lead orgânico, e por isso é um
+  piso; o CPO por canal só cruza gasto e reunião da mesma origem.
 - **Ritmo e Prazo** usam a última alteração da tarefa como aproximação da
   conclusão — o Kommo não expõe data de conclusão.
 
@@ -85,6 +91,9 @@ fórmula. Vale destacar três coisas que não são óbvias:
   mídia. Os leads seguem no dash, no filtro "Tudo".
 - **Público e criativo** cobrem só o Meta. O Google entra no CPL, CAC e ROAS do
   topo, mas ainda não no recorte por público.
+- **Custo por canal existe só onde há API de mídia.** Meta e Google têm gasto
+  medido; orgânico, indicação e "não rastreado" ficam com as colunas de custo em
+  branco — o custo deles existe, só não passa por aqui.
 - **~4% do gasto do Google** não casa com lead: algumas campanhas chegam com
   `utm_campaign` sem o sufixo de data, ambíguo entre duas campanhas. Resolve-se
   padronizando a UTM no Google Ads.
