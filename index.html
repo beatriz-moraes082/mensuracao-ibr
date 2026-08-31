@@ -384,8 +384,10 @@ thead tr.grp th:empty{background:var(--surface)}
           <div class="chartbox"><canvas id="ch-canal"></canvas></div></div>
         <div class="card span6"><div class="ch"><div><h3>Investimento e CPL</h3><div class="sub">Meta Ads · por semana</div></div></div>
           <div class="chartbox"><canvas id="ch-cpl"></canvas></div></div>
-        <div class="card span12"><div class="ch"><div><h3>Tabela semanal</h3><div class="sub">Todos os indicadores do período, semana a semana</div></div></div>
-          <div class="tblwrap" style="border:none;box-shadow:none"><table id="evol-table"></table></div></div>
+        <div class="card span12"><div class="ch"><div><h3>Tabela semanal</h3><div class="sub">Todos os indicadores do período, semana a semana</div></div><span class="cap">o seletor vale só para esta tabela</span></div>
+          <div id="evol-chips" style="margin-bottom:14px"></div>
+          <div class="tblwrap" style="border:none;box-shadow:none"><table id="evol-table"></table></div>
+          <div id="evol-table-note"></div></div>
       </div>
     </div>
   </section>
@@ -583,7 +585,11 @@ const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'o
 const monLabel = m => MESES[+m.slice(5, 7) - 1] + '/' + m.slice(2, 4);
 
 /* ── estado ──────────────────────────────────────────────────────────────── */
-const STATE = { period: 'mes', from: null, to: null, tab: 'diagnostico', canal: 'todos' };
+// `canal` é o seletor dos funis (aba 04) e `canalEvol` o da tabela semanal
+// (aba 02). São dois porque cada aba já filtra período por conta própria:
+// escolher Google no funil não deveria mexer na série semanal da outra aba.
+const STATE = { period: 'mes', from: null, to: null, tab: 'diagnostico',
+                canal: 'todos', canalEvol: 'todos' };
 
 const PERIODS = [
   ['7d',  'Últimos 7 dias'],
@@ -1053,13 +1059,14 @@ function buildMethodology() {
     ['Venda', 'Somente status <b>142 no funil Closer</b>, com data de fechamento dentro da janela. O mesmo 142 no SDR e na Importação RD significa reunião realizada e <b>não</b> entra aqui.', 'venda = status 142 ∧ pipeline = Closer ∧ closed_at ∈ janela'],
     ['Receita', 'Soma do campo <b>preço</b> dos negócios ganhos no período.'],
     ['Ciclo de vendas', 'Mediana de dias entre o <b>primeiro card da pessoa</b> nos funis de entrada e o fechamento. Não conta do card do Closer: ele é recriado quando o lead avança, então mediria zero dia para quem chega lá já ganho. Os dois cards são casados pelo telefone. Quando não existe card de entrada — cadastro direto no Closer, ou origem anterior ao início da coleta — vale o card do Closer, que ali é o primeiro que existe; parte desses nasce já ganha e entra como zero dia, então <b>subestima</b> a mediana. O KPI mostra quantas vendas do período estão nessa situação.', 'ciclo = mediana(closed_at − created_at do 1º card da pessoa, casado por telefone)'],
-    ['Investimento', 'Gasto de <b>mídia paga</b> somado dia a dia dentro da janela: Meta Ads por adset e Google Ads por campanha. O KPI mostra o total e abre a divisão entre os dois no subtítulo.'],
+    ['Investimento', 'Gasto de <b>mídia paga</b> somado dia a dia dentro da janela: Meta Ads por adset e Google Ads por campanha. O KPI mostra o total e abre a divisão entre os dois no subtítulo. A coluna <b>Invest.</b> da tabela semanal segue a mesma conta — até 31/08/2026 ela somava só o Meta, e por isso ficava abaixo deste KPI em toda semana com verba no Google.'],
     ['CPL', 'Investimento de mídia paga ÷ leads de <b>Meta + Google</b>. Não divide pelo total de leads, que inclui os não rastreados.', 'CPL = (investimento Meta + Google) ÷ (leads Meta + Google)'],
     ['CPL qualificado', 'O mesmo investimento ÷ os leads de mídia paga que qualificaram.', 'CPLq = investimento pago ÷ qualificados de mídia paga'],
     ['Custo por reunião', 'Investimento ÷ <b>todas</b> as reuniões realizadas do período. Conta a reunião que aconteceu, não a agendada — o no-show já está descontado, e é por isso que ele fica bem acima do CPL. Diferente do CPL, o divisor não se restringe a mídia paga: reunião de lead orgânico ou não rastreado também entra, então o número é um <b>piso</b> — o custo da reunião que a mídia de fato pagou é maior.', 'CPR = investimento pago ÷ reuniões realizadas'],
     ['Oportunidade', 'Lead que chegou a <b>reunião realizada</b>. É o ponto em que ele deixa de ser lead e vira negócio em andamento — o no-show já está descontado. Serve de divisor do CPO.'],
     ['CPO · custo por oportunidade', 'Investimento do canal ÷ oportunidades <b>daquele canal</b>. Não confundir com o <b>Custo por reunião</b> da faixa de KPIs: aquele divide o investimento total por <b>todas</b> as reuniões do período, inclusive as de lead orgânico e não rastreado, e por isso é um piso. O CPO por canal só cruza gasto e reunião da mesma origem, e é o número honesto para comparar canais entre si.', 'CPO(canal) = investimento do canal ÷ reuniões realizadas do canal'],
     ['CAC, CPO e ROAS por canal', 'A tabela <b>Eficiência financeira por canal</b>, no Diagnóstico, reparte a escada de custo por origem. Só <b>Meta</b> e <b>Google</b> têm gasto medido: nos demais canais as colunas de custo ficam <b>em branco</b>, não em zero — o custo de um lead orgânico existe, só não passa por estas APIs. O rodapé soma apenas mídia paga, porque é a única linha em que numerador e denominador falam do mesmo conjunto de leads. Cada canal pago herda as ressalvas do CAC e do ROAS gerais: <b>teto</b> e <b>piso</b>, porque a venda sem rastreio cai em "Não rastreado". Como a venda entra por data de fechamento e o gasto pelo dia em que saiu, janela mais curta que o ciclo de vendas compara safras diferentes.', 'CAC(canal) = investimento do canal ÷ vendas do canal · ROAS(canal) = receita do canal ÷ investimento do canal'],
+    ['Tabela semanal por canal', 'O seletor no topo da tabela recorta a série por origem e vale <b>só para aquela tabela</b> — os gráficos e os KPIs acima seguem mostrando o período inteiro. Em <b>Todos os canais</b>, a coluna <b>Pagos</b> traz os leads de Meta + Google e é ela, não o total de leads, que divide o CPL. Com um canal escolhido a coluna some, porque ali todo lead já é daquele canal. Canal sem mídia — orgânico, indicação, não rastreado — fica com Invest. e CPL em branco.'],
     ['Conversão SDR', 'Fatia dos leads de entrada do período que chegou a <b>reunião realizada</b>. É o resultado do time de SDR de ponta a ponta: qualificar, agendar e fazer comparecer.', 'conversão SDR = reuniões realizadas ÷ leads de entrada'],
     ['Conversão Closer', 'Fatia das reuniões realizadas que virou <b>venda</b>. Como a venda entra no período pela data de fechamento e a reunião pela data de criação do lead, os dois números são de safras um pouco diferentes — em mês de volume estável a razão é boa, em mês de virada ela é aproximada.', 'conversão Closer = vendas ÷ reuniões realizadas'],
     ['CAC', 'Investimento ÷ vendas cujo lead tem <b>Meta Ads</b> ou <b>Google Ads</b> como origem. É um <b>teto</b>: parte das vendas entrou sem rastreio e está contada como "não rastreado", então o CAC real é menor que o exibido.', 'CAC = investimento pago ÷ vendas com canal Meta ou Google'],
@@ -1406,8 +1413,29 @@ function renderMonthly() {
    02 · EVOLUÇÃO
    ═════════════════════════════════════════════════════════════════════════ */
 
-/** Divide a janela em semanas (segunda a domingo) e agrega tudo por semana. */
-function weeklySeries(w) {
+/** Soma um mapa de gasto (chave → dia → valor) dentro de cada semana. Meta e
+ *  Google chegam na mesma forma, então a mesma função serve para os dois. */
+function spendPorSemana(mapa, weeks, bucket) {
+  if (!mapa) return;
+  for (const byDay of Object.values(mapa))
+    for (const [ds, v] of Object.entries(byDay)) {
+      const b = bucket(new Date(ds + 'T12:00:00').getTime() / 1000);
+      if (b) b.inv += v;
+    }
+}
+
+/** Divide a janela em semanas (segunda a domingo) e agrega tudo por semana.
+ *
+ *  `canal` recorta a série por origem: 'todos' devolve o período inteiro e
+ *  qualquer outro valor filtra lead, card e venda por aquele canal.
+ *
+ *  O investimento acompanha o recorte, e é por isso que 'todos' passou a somar
+ *  Meta + Google. Antes esta função só somava o Meta, o que deixava a coluna
+ *  Invest. desta tabela em desacordo com o KPI de investimento do Diagnóstico
+ *  em toda semana com verba no Google — e, com o seletor, faria "Todos os
+ *  canais" mostrar menos gasto que a soma de Meta e Google escolhidos um a um.
+ */
+function weeklySeries(w, canal = 'todos') {
   const weeks = [];
   const start = new Date(w.from); start.setHours(12, 0, 0, 0);
   start.setDate(start.getDate() - ((start.getDay() + 6) % 7));
@@ -1422,19 +1450,26 @@ function weeklySeries(w) {
                  leads: 0, meta: 0, q: 0, a: 0, r: 0, p: 0, v: 0, rec: 0, inv: 0 });
   }
   const bucket = ts => weeks.find(k => ts * 1000 >= k.from.getTime() && ts * 1000 <= k.to.getTime());
+  const doCanal = l => canal === 'todos' || l.canal === canal;
   K.entrada.forEach(l => {
+    if (!doCanal(l)) return;
     const b = bucket(l.created_at); if (!b) return;
-    b.leads++; if (l.canal === 'Meta Ads') b.meta++;
+    // `meta` guarda os leads de MÍDIA PAGA, que é o divisor do CPL quando não
+    // há recorte. Com um canal escolhido a coluna some da tabela: ali todo lead
+    // já é daquele canal, e repeti-lo numa segunda coluna não diz nada.
+    b.leads++; if (CAMPANHA.has(l.canal)) b.meta++;
     if (l.qualified) b.q++; if (l.reuniao_agendada) b.a++; if (l.reuniao_realizada) b.r++;
   });
   K.closer.forEach(l => {
+    if (!doCanal(l)) return;
     const bc = bucket(l.created_at);
     if (bc && (l.proposta || PROPOSTA_STAGES.includes(l.status))) bc.p++;
     if (l.venda && l.closed_at) { const bv = bucket(l.closed_at); if (bv) { bv.v++; bv.rec += l.price || 0; } }
   });
-  if (M && M.adset) for (const byDay of Object.values(M.adset)) for (const [ds, v] of Object.entries(byDay)) {
-    const ts = new Date(ds + 'T12:00:00').getTime() / 1000; const b = bucket(ts); if (b) b.inv += v;
-  }
+  // Canal sem API de mídia não recebe gasto nenhum, e a coluna fica vazia em
+  // vez de zero — mesma regra da tabela de eficiência por canal.
+  if (canal === 'todos' || canal === 'Meta Ads') spendPorSemana(M && M.adset, weeks, bucket);
+  if (canal === 'todos' || canal === 'Google Ads') spendPorSemana(G && G.campaign, weeks, bucket);
   return weeks;
 }
 
@@ -1553,17 +1588,72 @@ function renderEvolucao(c) {
       y: { grid: { color: css('--line') }, beginAtZero: true, ticks: { color: css('--mut'), font: { family: 'Space Mono', size: 9 }, callback: v => 'R$' + v } } } }
   });
 
-  table($('#evol-table'),
-    [{ t: 'Semana' }, { t: 'Leads', num: 1 }, { t: 'Meta', num: 1 }, { t: 'Invest.', num: 1 }, { t: 'CPL', num: 1 },
-     { t: 'Qualif.', num: 1 }, { t: 'Taxa', num: 1 }, { t: 'Agend.', num: 1 }, { t: 'Realiz.', num: 1 },
-     { t: 'Prop.', num: 1 }, { t: 'Vendas', num: 1 }, { t: 'Receita', num: 1 }],
-    wk.map(k => [
-      `<b>${k.label}</b>`, int(k.leads), int(k.meta), k.inv ? kbrl(k.inv) : '—',
-      k.meta && k.inv ? brl(k.inv / k.meta) : '—', int(k.q), pctS(k.q, k.leads),
-      int(k.a), int(k.r), int(k.p), `<b>${int(k.v)}</b>`, k.rec ? kbrl(k.rec) : '—'
-    ]),
-    ['Total', int(c.leads), int(c.leadsMeta), kbrl(c.invest), c.cplMeta ? brl(c.cplMeta) : '—',
-     int(c.qualif), pctS(c.qualif, c.leads), int(c.agend), int(c.realiz), int(c.prop), int(c.vendas), kbrl(c.receita)]);
+  tabelaSemanal(c);
+}
+
+/* ── tabela semanal, com recorte por canal ────────────────────────────────────
+   O seletor vale só para esta tabela. Os gráficos e os KPIs acima continuam
+   mostrando o período inteiro: eles respondem "como o mês andou", e trocá-los
+   junto faria a aba inteira mudar de assunto a cada clique sem avisar. A
+   legenda do card diz isso.
+
+   Quando um canal é escolhido, a coluna de leads pagos desaparece — ali todo
+   lead já é daquele canal, e a coluna repetiria a coluna Leads. */
+function tabelaSemanal(c) {
+  const cont = new Map();
+  c.ent.forEach(l => cont.set(l.canal, (cont.get(l.canal) || 0) + 1));
+  // Canal que só tem card ou venda entra com zero lead, como no seletor dos
+  // funis: ele soma no Total da tabela, e sem chip não haveria como isolá-lo —
+  // é o caso do Base RD, que fecha venda sem nunca ter lead de entrada.
+  c.clo.forEach(l => { if (!cont.has(l.canal)) cont.set(l.canal, 0); });
+  c.vend.forEach(l => { if (!cont.has(l.canal)) cont.set(l.canal, 0); });
+  const canais = ordenaCanais(cont, v => v).map(([k]) => k);
+  if (STATE.canalEvol !== 'todos' && !canais.includes(STATE.canalEvol)) STATE.canalEvol = 'todos';
+
+  $('#evol-chips').innerHTML = '<div class="seg">' +
+    [['todos', 'Todos os canais', c.ent.length]]
+      .concat(canais.map(k => [k, canalLab(k), cont.get(k)]))
+      .map(([v, lab, n]) => `<button data-c="${esc(v)}" class="${STATE.canalEvol === v ? 'on' : ''}">${esc(lab)}<i>${int(n)}</i></button>`)
+      .join('') + '</div>';
+  $$('#evol-chips button').forEach(b => b.onclick = () => { STATE.canalEvol = b.dataset.c; renderAll(); });
+
+  const sel = STATE.canalEvol;
+  const todos = sel === 'todos';
+  const wk = weeklySeries(c.w, sel);
+
+  // O divisor do CPL é o que o anúncio pagou: com recorte, os leads do canal;
+  // sem recorte, só os de mídia paga — nunca o total, que inclui orgânico.
+  const den = k => todos ? k.meta : k.leads;
+
+  const cols = [{ t: 'Semana' }, { t: 'Leads', num: 1 }]
+    .concat(todos ? [{ t: 'Pagos', num: 1 }] : [])
+    .concat([{ t: 'Invest.', num: 1 }, { t: 'CPL', num: 1 }, { t: 'Qualif.', num: 1 },
+             { t: 'Taxa', num: 1 }, { t: 'Agend.', num: 1 }, { t: 'Realiz.', num: 1 },
+             { t: 'Prop.', num: 1 }, { t: 'Vendas', num: 1 }, { t: 'Receita', num: 1 }]);
+
+  const linha = k => [int(k.leads)]
+    .concat(todos ? [int(k.meta)] : [])
+    .concat([k.inv ? kbrl(k.inv) : '—', k.inv && den(k) ? brl(k.inv / den(k)) : '—',
+             int(k.q), pctS(k.q, k.leads), int(k.a), int(k.r), int(k.p),
+             `<b>${int(k.v)}</b>`, k.rec ? kbrl(k.rec) : '—']);
+
+  // O total sai da soma das semanas, não do computeCore: as semanas já vêm
+  // cortadas pela janela e filtradas pelo canal, então somá-las é a única
+  // forma de o rodapé falar do mesmo conjunto que as linhas.
+  const tot = wk.reduce((t, k) => ({
+    leads: t.leads + k.leads, meta: t.meta + k.meta, q: t.q + k.q, a: t.a + k.a,
+    r: t.r + k.r, p: t.p + k.p, v: t.v + k.v, rec: t.rec + k.rec, inv: t.inv + k.inv
+  }), { leads: 0, meta: 0, q: 0, a: 0, r: 0, p: 0, v: 0, rec: 0, inv: 0 });
+
+  table($('#evol-table'), cols, wk.map(k => [`<b>${k.label}</b>`].concat(linha(k))),
+        ['Total'].concat(linha(tot)));
+
+  $('#evol-table-note').innerHTML = `<div class="note">${
+    todos ? `<b>Pagos</b> são os leads de Meta + Google, e é por eles que o CPL divide — não pelo total, que inclui orgânico e não rastreado. <b>Invest.</b> soma as duas mídias.`
+          : `Recorte de <b>${esc(canalLab(sel))}</b>: leads, qualificados, reuniões, propostas e vendas são só deste canal.${
+              SPEND_CANAL[sel] ? ' O investimento é o que esta mídia gastou na semana.'
+                               : ' Este canal não tem gasto medido, então Invest. e CPL ficam em branco.'}`
+  } Vendas e receita entram pela <b>data de fechamento</b> e o resto pela data de entrada do lead, então numa semana isolada as duas colunas falam de safras diferentes.</div>`;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════

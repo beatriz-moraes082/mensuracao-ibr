@@ -89,6 +89,8 @@ fórmula. Vale destacar três coisas que não são óbvias:
 - **Junho/2026** está fora do comparativo mensal: o apagão de rastreio de 17/06 a
   10/07 deixou os leads sem UTM, então o CPL do mês mediria o rastreio, não a
   mídia. Os leads seguem no dash, no filtro "Tudo".
+- **A tabela semanal** (aba Evolução) tem seletor de canal, que vale só para
+  ela — os gráficos e KPIs da aba seguem mostrando o período inteiro.
 - **Público e criativo** cobrem só o Meta. O Google entra no CPL, CAC e ROAS do
   topo, mas ainda não no recorte por público.
 - **Custo por canal existe só onde há API de mídia.** Meta e Google têm gasto
