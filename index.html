@@ -804,6 +804,9 @@ const vendasIn = w => K.closer.filter(l => l.venda && inWin(l.closed_at, w));
 // o Kommo não expõe campo de data para ela — só para a realizada.
 const reuTs = l => { const n = parseInt(l.data_reuniao, 10); return n > 1e9 ? n : l.created_at; };
 const realizadasIn = w => K.entrada.filter(l => l.reuniao_realizada && inWin(reuTs(l), w));
+// Agendadas = tarefas de reunião marcadas (due) dentro da janela — a agenda
+// inteira, não só as dos leads que entraram no período. Ver K.meetings.
+const agendadasIn = w => (K.meetings || []).filter(t => inWin(t.due, w));
 
 /** Bloco central de números do período — tudo que o dashboard mostra sai daqui. */
 function computeCore(w) {
@@ -811,7 +814,10 @@ function computeCore(w) {
   const camp = ent.filter(l => CAMPANHA.has(l.canal));
   const invest = spendIn(M && M.adset, w);
   const qualif = ent.filter(l => l.qualified).length;
-  const agend  = ent.filter(l => l.reuniao_agendada).length;
+  // Agendadas pela AGENDA (tarefas de reunião marcadas na janela), não pela
+  // entrada do lead — puxa todas as reuniões agendadas, inclusive remarcações.
+  const agendSet = agendadasIn(w);
+  const agend = agendSet.length;
   // Reuniões realizadas entram pela DATA DA REUNIÃO (ver realizadasIn), não pelo
   // created_at do lead — alinha com a agenda que o comercial confere no mês.
   const realizSet = realizadasIn(w);
@@ -847,7 +853,7 @@ function computeCore(w) {
   const receitaPago = receitaMeta + receitaGoogle;
 
   return {
-    w, ent, clo, vend, camp, vendMeta, realizSet,
+    w, ent, clo, vend, camp, vendMeta, realizSet, agendSet,
     leads: ent.length, leadsCamp: camp.length, leadsMeta,
     invest, qualif, qualifMeta, agend, realiz, prop,
     vendas: vend.length, receita, vendasMeta: vendMeta.length, receitaMeta,
@@ -1038,6 +1044,14 @@ async function boot() {
     const at = K.primeiraEntrada.get(l.dkey);
     if (at === undefined || l.created_at < at) K.primeiraEntrada.set(l.dkey, l.created_at);
   }
+  // AGENDA: reuniões agendadas vêm das tarefas do tipo "Meeting" (task_type_id 2),
+  // contadas pela data marcada (due). É "todas as reuniões que foram agendadas" —
+  // cada slot marcado é uma tarefa, então remarcação conta como novo agendamento,
+  // e independe de quando o lead entrou. A tarefa não traz o lead vinculado, só o
+  // responsável: por isso a agendada por SDR sai daqui, mas a agendada por CANAL
+  // continua vindo da tag do lead (o funil por canal).
+  K.meetings = (K.tasks || []).filter(t => t.task_type_id === 2 && t.due);
+
   $('#boot').hidden = true; $('#app').hidden = false;
   $('#ft-account').textContent = '(' + (K.account || 'ipiocabeachresidence') + ')';
   $('#ft-updated').textContent = new Date(K.fetched_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
@@ -1090,7 +1104,8 @@ function buildMethodology() {
     ['Lead', 'Cada negócio criado nos funis de entrada — <b>SDR</b> e <b>Nutrição</b> — dentro da janela. O funil <b>Closer</b> não entra: ele é etapa de avanço e recria o mesmo lead com outro id, então somá-lo contaria a mesma pessoa duas vezes. Duplicidades pelo mesmo telefone são removidas dentro do SDR na coleta e também entre os dois funis — quem tem card no SDR e outro na Nutrição conta uma vez, pelo card do SDR, que é onde a entrada acontece.'],
     ['Canal', 'Vem do campo <b>Origem</b> do contato, normalizado: Meta+Ads/Facebook/Instagram → Meta Ads; google → Google Ads; vazio, "unknown" ou lixo → Não rastreado.'],
     ['Lead qualificado', 'Lead que chegou às etapas <b>Lead qualificado</b>, <b>Reunião agendada</b> ou <b>Reunião realizada</b>, ou que tem tag de reunião. Quem agendou passou pela qualificação, mesmo que o card tenha voltado de etapa.'],
-    ['Reunião realizada', 'Status <b>142 do funil SDR</b> (que ali se chama "Reunião realizada") ou tag <code>reunião-realizada</code>. Entra no período pela <b>data em que a reunião aconteceu</b> (campo "Data da Reunião Realizada"), não pela data em que o lead entrou — é assim que ela bate com a agenda que o comercial confere no mês. A <b>agendada</b> segue pela entrada do lead: o Kommo não guarda data para a reunião agendada, só para a realizada.'],
+    ['Reunião agendada', 'Vem da <b>agenda</b>: cada <b>tarefa de reunião</b> do Kommo, contada pela <b>data marcada</b> da reunião. É "todas as reuniões agendadas" do período — cada slot marcado conta, então <b>remarcação entra como novo agendamento</b>, e não depende de quando o lead entrou. A tarefa não guarda o canal do lead, só o responsável: por isso a agendada aparece no total e por SDR, mas no <b>funil por canal</b> ela cai na tag do lead — e a soma dos canais fica abaixo do total, porque remarcação e reunião sem lead vinculado não têm canal.'],
+    ['Reunião realizada', 'Status <b>142 do funil SDR</b> (que ali se chama "Reunião realizada") ou tag <code>reunião-realizada</code>. Entra no período pela <b>data em que a reunião aconteceu</b> (campo "Data da Reunião Realizada"), não pela data em que o lead entrou — é assim que ela bate com a agenda que o comercial confere no mês. A <b>agendada</b> vem da tarefa de reunião pela data marcada (ver "Reunião agendada").'],
     ['Proposta', 'Card do Closer em <b>Proposta enviada</b>, <b>Follow-up</b>, <b>Sinal verde</b> ou <b>Dados de venda solicitados</b>.'],
     ['Venda', 'Somente status <b>142 no funil Closer</b>, com data de fechamento dentro da janela. O mesmo 142 no SDR e na Importação RD significa reunião realizada e <b>não</b> entra aqui.', 'venda = status 142 ∧ pipeline = Closer ∧ closed_at ∈ janela'],
     ['Receita', 'Soma do campo <b>preço</b> dos negócios ganhos no período.'],
@@ -1264,7 +1279,7 @@ function renderDiagnostico(c) {
     grupo('Volumetria · operação', [
       kpi('Leads', int(c.leads), `${delta(c.leads, p.leads)} vs período anterior`, 'ink'),
       kpi('Qualificados', int(c.qualif), `${c.txQualif.toFixed(0)}% dos leads ${delta(c.txQualif, p.txQualif)}`, 'accent'),
-      kpi('Reuniões agendadas', int(c.agend), `${pctS(c.agend, c.qualif)} dos qualificados`),
+      kpi('Reuniões agendadas', int(c.agend), `<span class="methlink" data-meth="Reunião agendada">agenda do período</span> · ${pctS(c.agend, c.qualif)} dos qualificados`),
       kpi('Reuniões realizadas', int(c.realiz), `${pctS(c.realiz, c.agend)} de comparecimento · <span class="methlink" data-meth="Reunião realizada">contadas pela data da reunião</span>`),
       kpi('Propostas', int(c.prop), `${pctS(c.prop, c.clo.length)} dos cards no Closer`),
       kpi('Vendas', int(c.vendas), `${delta(c.vendas, p.vendas)} vs anterior`, 'accent')
@@ -1382,8 +1397,11 @@ function renderDiagnostico(c) {
   const bucketSDR = n => { let e = porSDR.get(n); if (!e) { e = { n: 0, q: 0, a: 0, r: 0 }; porSDR.set(n, e); } return e; };
   c.ent.forEach(l => {
     const e = bucketSDR(sdrDe(l));
-    e.n++; if (l.qualified) e.q++; if (l.reuniao_agendada) e.a++;
+    e.n++; if (l.qualified) e.q++;
   });
+  // Agendadas pela agenda (tarefa de reunião), pelo responsável da tarefa —
+  // mesmo critério do KPI, então a coluna soma no total.
+  c.agendSet.forEach(t => { bucketSDR(uname(t.responsible)).a++; });
   // Realizadas entram pela data da reunião (c.realizSet) para o total da coluna
   // bater com o KPI. Um card realizado neste período de um lead criado antes
   // aparece aqui mesmo sem lead do SDR na janela (linha com 0 leads e 1 realiz.).
@@ -1424,10 +1442,12 @@ function renderMonthly() {
   K.entrada.forEach(l => {
     const e = touch(monKey(l.created_at));
     e.leads++; if (l.canal === 'Meta Ads') e.meta++;
-    if (l.qualified) e.q++; if (l.reuniao_agendada) e.a++;
+    if (l.qualified) e.q++;
     // Realizada entra no mês em que a reunião aconteceu, não no mês do lead.
     if (l.reuniao_realizada) touch(monKey(reuTs(l))).r++;
   });
+  // Agendadas por mês da AGENDA (data marcada da reunião).
+  (K.meetings || []).forEach(t => { touch(monKey(t.due)).a++; });
   K.closer.forEach(l => {
     if (l.proposta || PROPOSTA_STAGES.includes(l.status)) touch(monKey(l.created_at)).p++;
     if (l.venda && l.closed_at) { const e = touch(monKey(l.closed_at)); e.v++; e.rec += l.price || 0; }
@@ -1503,8 +1523,19 @@ function weeklySeries(w, canal = 'todos') {
     // há recorte. Com um canal escolhido a coluna some da tabela: ali todo lead
     // já é daquele canal, e repeti-lo numa segunda coluna não diz nada.
     b.leads++; if (CAMPANHA.has(l.canal)) b.meta++;
-    if (l.qualified) b.q++; if (l.reuniao_agendada) b.a++;
+    if (l.qualified) b.q++;
   });
+  // Agendadas caem na semana em que a reunião foi MARCADA (due da tarefa) — a
+  // agenda inteira. A tarefa não tem canal: sem recorte usa a agenda; com um
+  // canal escolhido cai no agendado do lead daquele canal (a tag).
+  if (canal === 'todos') {
+    (K.meetings || []).forEach(t => { const b = bucket(t.due); if (b) b.a++; });
+  } else {
+    K.entrada.forEach(l => {
+      if (l.canal !== canal || !l.reuniao_agendada) return;
+      const b = bucket(l.created_at); if (b) b.a++;
+    });
+  }
   // Reunião realizada cai na semana em que ACONTECEU (data da reunião), como a
   // venda cai na semana do fechamento — não na semana em que o lead entrou.
   K.entrada.forEach(l => {
@@ -1552,7 +1583,7 @@ function renderConversao(c, p) {
   $('#evol-conv').innerHTML = [
     card('Qualif → agendado', um(c.txAgend), selo(c.txAgend - p.txAgend, true), 'agendadas ÷ qualificados', c.txAgend, METAS.qualifAgend),
     card('Tx. agendamento', um(txAgendLead), selo(txAgendLead - pTxAgendLead, true), 'agendadas ÷ leads', txAgendLead, METAS.agendamento),
-    card('Reuniões agendadas', int(c.agend), selo(varPct(c.agend, p.agend), false), `${pctS(c.agend, c.leads)} dos leads do período`),
+    card('Reuniões agendadas', int(c.agend), selo(varPct(c.agend, p.agend), false), `<span class="methlink" data-meth="Reunião agendada">agenda do período</span> · ${pctS(c.agend, c.leads)} dos leads`),
     card('Reuniões realizadas', int(c.realiz), selo(varPct(c.realiz, p.realiz), false), `${pctS(c.realiz, c.agend)} das agendadas · <span class="methlink" data-meth="Reunião realizada">contadas pela data da reunião</span>`),
     card('Tx. comparecimento', um(c.txCompar), selo(c.txCompar - p.txCompar, true), 'realizadas ÷ agendadas', c.txCompar, METAS.comparecimento),
     card('Custo por reunião realizada', c.cpr ? brl(c.cpr) : '—', selo(varPct(c.cpr, p.cpr), false, true), 'investimento ÷ realizadas')
@@ -2025,7 +2056,11 @@ function funisPorCanal(c) {
 
   /* ── funil SDR ── */
   const qualif = E.filter(l => l.qualified).length;
-  const agend  = E.filter(l => l.reuniao_agendada).length;
+  // Esta seção é a visão POR CANAL, então a agendada vem da tag do lead (a
+  // tarefa de reunião não guarda canal) — pirâmide e comparativo batem entre si.
+  // A agenda inteira (tarefas marcadas) está nos KPIs e no funil geral acima;
+  // aqui a soma fica abaixo dela, e a nota do comparativo explica por quê.
+  const agend = E.filter(l => l.reuniao_agendada).length;
   // Realizada pela data da reunião (c.realizSet), recortada pelo canal do card.
   const realiz = fil(c.realizSet).length;
   $('#fc-cap-sdr').textContent = `${nome} · ${int(E.length)} leads · ${janela}`;
@@ -2035,7 +2070,8 @@ function funisPorCanal(c) {
       hint: 'parados nesta etapa hoje' },
     { k: 'Lead qualificado', n: qualif, den: E.length, denLab: 'dos leads',
       hint: 'chegaram à qualificação ou além' },
-    { k: 'Reunião agendada', n: agend, den: qualif, denLab: 'dos qualificados' },
+    { k: 'Reunião agendada', n: agend, den: qualif, denLab: 'dos qualificados',
+      hint: 'agendada atribuível a canal (pela tag do lead) — a agenda total está nos KPIs' },
     { k: 'Reunião realizada', n: realiz, den: agend, denLab: 'das agendadas', win: 1 }
   ]);
 
@@ -2097,7 +2133,9 @@ function funisPorCanal(c) {
     aconteceu, venda pela data de fechamento. Ambas costumam ser de um lead que entrou semanas
     atrás, então em janela curta a razão contra a etapa anterior cruza duas safras; em janela longa
     ela converge. Canal com poucos leads produz taxa instável: um qualificado a mais move 17 pontos
-    numa base de 6.</div>`;
+    numa base de 6. A <b>reunião agendada</b> aqui vem da tag do lead, para ter canal; por isso a
+    soma dos canais fica <b>abaixo da agenda total</b> dos KPIs (tarefas de reunião marcadas no
+    período) — remarcações e reuniões sem lead do período vinculado não têm canal para entrar.</div>`;
 }
 
 function renderFunis(c) {
