@@ -270,6 +270,11 @@ thead tr.grp th:empty{background:var(--surface)}
 .mk{display:inline-block;font-family:var(--f-mono);font-size:11.5px;font-weight:700;color:var(--ink);background:color-mix(in srgb,var(--accent) 14%,transparent);padding:3px 9px;border-radius:999px;margin-bottom:7px}
 .mdef p{font-size:13px;color:var(--ink2);line-height:1.6}.mdef b{color:var(--ink)}
 .mform{font-family:var(--f-mono);font-size:12px;color:var(--ink);background:var(--track);border-left:2.5px solid var(--accent);padding:8px 12px;border-radius:0 var(--r-xs) var(--r-xs) 0;margin-top:6px}
+/* nota clicável que leva à Metodologia no verbete certo */
+.methlink{cursor:pointer;border-bottom:1px dashed color-mix(in srgb,var(--accent) 55%,var(--line));color:var(--mut);transition:.15s}
+.methlink:hover{color:var(--accent);border-bottom-color:var(--accent)}
+.mdef-hl{animation:mdefhl 2.6s ease}
+@keyframes mdefhl{0%,50%{background:color-mix(in srgb,var(--accent) 16%,transparent)}100%{background:transparent}}
 
 /* ── loading / vazio ────────────────────────────────── */
 .loading{padding:90px 20px;text-align:center}
@@ -1055,11 +1060,29 @@ async function boot() {
   };
 })();
 
+const methSlug = s => _semAcento(s.toLowerCase()).replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+
+/** Abre a Metodologia e, se dado um verbete, rola até ele e o pisca. */
+function openMeth(key) {
+  const mod = $('#methModal');
+  mod.classList.add('open');
+  const el = key && document.getElementById('meth-' + methSlug(key));
+  if (el) setTimeout(() => {
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    el.classList.remove('mdef-hl'); void el.offsetWidth; el.classList.add('mdef-hl');
+  }, 40);
+}
+
 (function modalInit() {
   const mod = $('#methModal');
-  $('#methBtn').onclick = () => mod.classList.add('open');
+  $('#methBtn').onclick = () => openMeth();
   $$('[data-close]', mod).forEach(b => b.onclick = () => mod.classList.remove('open'));
   addEventListener('keydown', e => { if (e.key === 'Escape') mod.classList.remove('open'); });
+  // Qualquer nota com data-meth abre a Metodologia no verbete indicado.
+  document.addEventListener('click', e => {
+    const t = e.target.closest('[data-meth]');
+    if (t) { e.preventDefault(); openMeth(t.getAttribute('data-meth')); }
+  });
 })();
 
 function buildMethodology() {
@@ -1093,7 +1116,7 @@ function buildMethodology() {
   ];
   $('#meth-body').innerHTML =
     `<div class="warn" style="margin:0 0 16px"><span class="wi">✦</span><div>Todos os números respeitam o filtro de período do topo de cada aba, exceto o comparativo mês a mês.</div></div>` +
-    defs.map(([k, p, f]) => `<div class="mdef"><span class="mk">${k}</span><p>${p}</p>${f ? `<div class="mform">${esc(f)}</div>` : ''}</div>`).join('');
+    defs.map(([k, p, f]) => `<div class="mdef" id="meth-${methSlug(k)}"><span class="mk">${k}</span><p>${p}</p>${f ? `<div class="mform">${esc(f)}</div>` : ''}</div>`).join('');
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -1242,7 +1265,7 @@ function renderDiagnostico(c) {
       kpi('Leads', int(c.leads), `${delta(c.leads, p.leads)} vs período anterior`, 'ink'),
       kpi('Qualificados', int(c.qualif), `${c.txQualif.toFixed(0)}% dos leads ${delta(c.txQualif, p.txQualif)}`, 'accent'),
       kpi('Reuniões agendadas', int(c.agend), `${pctS(c.agend, c.qualif)} dos qualificados`),
-      kpi('Reuniões realizadas', int(c.realiz), `${pctS(c.realiz, c.agend)} de comparecimento`),
+      kpi('Reuniões realizadas', int(c.realiz), `${pctS(c.realiz, c.agend)} de comparecimento · <span class="methlink" data-meth="Reunião realizada">contadas pela data da reunião</span>`),
       kpi('Propostas', int(c.prop), `${pctS(c.prop, c.clo.length)} dos cards no Closer`),
       kpi('Vendas', int(c.vendas), `${delta(c.vendas, p.vendas)} vs anterior`, 'accent')
     ]),
@@ -1530,7 +1553,7 @@ function renderConversao(c, p) {
     card('Qualif → agendado', um(c.txAgend), selo(c.txAgend - p.txAgend, true), 'agendadas ÷ qualificados', c.txAgend, METAS.qualifAgend),
     card('Tx. agendamento', um(txAgendLead), selo(txAgendLead - pTxAgendLead, true), 'agendadas ÷ leads', txAgendLead, METAS.agendamento),
     card('Reuniões agendadas', int(c.agend), selo(varPct(c.agend, p.agend), false), `${pctS(c.agend, c.leads)} dos leads do período`),
-    card('Reuniões realizadas', int(c.realiz), selo(varPct(c.realiz, p.realiz), false), `${pctS(c.realiz, c.agend)} das agendadas`),
+    card('Reuniões realizadas', int(c.realiz), selo(varPct(c.realiz, p.realiz), false), `${pctS(c.realiz, c.agend)} das agendadas · <span class="methlink" data-meth="Reunião realizada">contadas pela data da reunião</span>`),
     card('Tx. comparecimento', um(c.txCompar), selo(c.txCompar - p.txCompar, true), 'realizadas ÷ agendadas', c.txCompar, METAS.comparecimento),
     card('Custo por reunião realizada', c.cpr ? brl(c.cpr) : '—', selo(varPct(c.cpr, p.cpr), false, true), 'investimento ÷ realizadas')
   ].join('');
@@ -2083,7 +2106,7 @@ function renderFunis(c) {
 
   $('#funis-kpis').innerHTML = [
     kpi('Entradas no funil', int(c.leads), c.w.label, 'ink'),
-    kpi('Reuniões realizadas', int(c.realiz), `${pctS(c.realiz, c.leads)} das entradas`),
+    kpi('Reuniões realizadas', int(c.realiz), `${pctS(c.realiz, c.leads)} das entradas · <span class="methlink" data-meth="Reunião realizada">contadas pela data da reunião</span>`),
     kpi('Propostas', int(c.prop), `${pctS(c.prop, c.clo.length)} dos cards no Closer`),
     kpi('Vendas', int(c.vendas), `${pctS(c.vendas, c.leads)} das entradas`, 'accent'),
     kpi('Receita', kbrl(c.receita), `ticket ${c.ticket ? brl(c.ticket) : '—'}`)
