@@ -263,6 +263,9 @@ def fetch_tasks():
                 # Aproximação de "quando concluiu": o Kommo não expõe a data de
                 # conclusão, e updated_at de tarefa concluída é a última mexida.
                 "updated_at":   t.get("updated_at"),
+                # Lead vinculado — usado só para montar `meetings` (reuniões por
+                # pessoa) e removido antes de publicar, para não inflar o JSON.
+                "entity_id":    t.get("entity_id"),
             })
         print(f"    tasks pg{page}: +{len(batch)} (total {len(tasks)})")
         if len(batch) < 250: break
@@ -635,6 +638,35 @@ def main():
     print("\n📊 MÉTRICAS:")
     for k, v in metrics.items(): print(f"  {k:22s}: {v}")
 
+    # AGENDA por pessoa: cada tarefa do tipo Meeting (task_type_id 2) vira uma
+    # entrada com o lead resolvido para dkey (pessoa), canal e mês de entrada.
+    # É o que permite ao dash contar reuniões agendadas POR PESSOA e pela data
+    # marcada, deduplicando quem remarcou. O JSON é público, então nada de id
+    # cru: só dkey (hash do telefone, já usado no resto do dash), canal e mês.
+    lead_idx = {}
+    for lst in (processed_sdr, processed_nutricao, processed_closer,
+                processed_rd_sdr, processed_rd_closer):
+        for l in lst:
+            lead_idx.setdefault(l["id"], l)
+    meetings = []
+    for t in tasks:
+        if t.get("task_type_id") != 2 or not t.get("due"):
+            continue
+        eid = t.get("entity_id")
+        l = lead_idx.get(eid)
+        k = (l.get("dkey") if l else "") or ("x" + hashlib.sha1(str(eid).encode()).hexdigest()[:11])
+        meetings.append({
+            "due": t["due"],
+            "k":   k,                                        # pessoa (dkey/hash)
+            "r":   t.get("responsible"),                     # SDR responsável
+            "c":   (l.get("canal") if l else "Não rastreado"),
+            "m":   (l.get("month") if l else None),          # mês de entrada
+        })
+    print(f"  reuniões (agenda) com lead vinculado: {sum(1 for m in meetings if not m['k'].startswith('x'))}/{len(meetings)}")
+    # entity_id sai do array de tarefas publicado (privacidade + tamanho).
+    for t in tasks:
+        t.pop("entity_id", None)
+
     output = {
         "fetched_at":  datetime.now(timezone.utc).isoformat(),
         "account":     SUBDOMAIN,
@@ -644,6 +676,7 @@ def main():
         "users_map":   {str(k): v for k, v in users_map.items()},
         "task_types":  {str(k): v for k, v in task_types.items()},
         "tasks":       tasks,
+        "meetings":    meetings,
         "metrics":     metrics,
         "sdr":         [slim(l) for l in deduped_sdr],
         "closer":      [slim(l) for l in processed_closer],
