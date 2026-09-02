@@ -183,6 +183,21 @@ td{padding:10px 13px;font-size:12.5px;color:var(--ink2)}
 td.num,th.num{text-align:right;font-family:var(--f-mono);font-variant-numeric:tabular-nums}
 td b,td strong{color:var(--ink);font-weight:700}
 tfoot td{border-top:1px solid var(--line);font-weight:700;color:var(--ink);background:var(--track)}
+/* ── seções (Google/Meta) e subtotais na tabela interna ── */
+tr.secrow td{background:var(--tint);color:var(--accent);font-family:var(--f-mono);font-size:10px;font-weight:700;
+ letter-spacing:.09em;text-transform:uppercase;padding:9px 13px;border-top:1px solid var(--line)}
+tr.secrow:hover td{background:var(--tint)}
+tr.subrow td{background:var(--track);color:var(--ink);font-weight:700;border-top:1px solid var(--line)}
+tr.subrow:hover td{background:var(--track)}
+/* ── bloco de uso interno (cadeado) ─────────────────── */
+.lockwrap{display:flex;flex-direction:column;align-items:center;gap:10px;padding:30px 20px;text-align:center}
+.lockpill{display:inline-flex;align-items:center;gap:9px;font-family:var(--f-mono);font-size:12px;font-weight:700;
+ letter-spacing:.03em;color:var(--ink2);background:var(--surface);border:1px dashed var(--line);border-radius:999px;
+ padding:11px 20px;cursor:pointer;transition:.2s}
+.lockpill:hover{border-color:var(--accent);color:var(--accent);border-style:solid}
+.lockhint{font-size:11px;color:var(--mut);font-family:var(--f-mono)}
+.lockmini{flex:none;border:none;background:none;color:var(--mut);cursor:pointer;font-size:13px;padding:2px 6px;border-radius:6px}
+.lockmini:hover{color:var(--accent);background:var(--tint)}
 /* ── funil por canal ────────────────────────────────── */
 .seg button i{font-style:normal;font-weight:400;opacity:.6;margin-left:6px;font-family:var(--f-mono);font-size:11px}
 .fhead{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;
@@ -415,6 +430,16 @@ thead tr.grp th:empty{background:var(--surface)}
         <div class="card span12"><div class="ch"><div><h3>Campanhas por qualificação</h3><div class="sub">Qual campanha traz lead que qualifica — Meta e Google na mesma régua, da melhor taxa para a pior</div></div></div>
           <div class="tblwrap" style="border:none;box-shadow:none"><table id="perfil-camp"></table></div>
           <div id="perfil-camp-note"></div></div>
+        <div class="card span12" id="interno-card">
+          <div class="lockwrap" id="interno-lock">
+            <button class="lockpill" id="interno-unlock">🔒 Ver funil completo por campanha (Google + Meta) · uso interno Trilha</button>
+            <span class="lockhint">Gasto → oportunidade → reunião → proposta → venda, campanha a campanha</span>
+          </div>
+          <div id="interno-body" hidden>
+            <div class="ch"><div><h3>Funil por campanha · Google + Meta</h3><div class="sub">Da verba à venda, campanha a campanha, com subtotal por plataforma — uso interno Trilha</div></div>
+              <button class="lockmini" id="interno-relock" title="Ocultar de novo">🔒 ocultar</button></div>
+            <div class="tblwrap" style="border:none;box-shadow:none"><table id="interno-camp"></table></div>
+            <div id="interno-camp-note"></div></div></div>
         <div class="card span12"><div class="ch"><div><h3>Sinais preditivos</h3><div class="sub">Diferença entre quem qualifica e quem não qualifica</div></div></div>
           <div id="perfil-sinais"></div></div>
         <div class="card span12"><div class="ch"><div><h3>Buscar leads pelas respostas</h3><div class="sub">Combine os filtros — cada resposta do bot é um filtro</div></div><span class="cap" id="perfil-busca-n"></span></div>
@@ -550,7 +575,7 @@ thead tr.grp th:empty{background:var(--surface)}
 const $  = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 
-let K = null, M = null, G = null;
+let K = null, M = null, G = null, LAST_CORE = null;
 
 /* ── IDs reais da conta (ipiocabeachresidence) ───────────────────────────── */
 const PIPE = { SDR: 13996659, CLOSER: 13994627, NUT: 13994751, RD_SDR: 13949375, RD_CLOSER: 14208303 };
@@ -1006,6 +1031,7 @@ function switchTab(name) {
 function renderAll() {
   renderFilters();
   const w = periodWindow(), core = computeCore(w);
+  LAST_CORE = core;
   try {
     if (STATE.tab === 'diagnostico') renderDiagnostico(core);
     else if (STATE.tab === 'evolucao') renderEvolucao(core);
@@ -1071,6 +1097,20 @@ async function boot() {
   $$('.tb').forEach(b => b.onclick = () => switchTab(b.dataset.tab));
   buildMethodology();
   renderAll();
+  wireInterno();
+}
+
+/* Cadeado do bloco interno: pede a senha, revela e lembra pela sessão. */
+function wireInterno() {
+  const unlock = $('#interno-unlock'), relock = $('#interno-relock');
+  if (unlock) unlock.onclick = () => {
+    const v = prompt('Senha de uso interno Trilha:');
+    if (v == null) return;
+    if (v === INTERNO_PW) setInterno(true);
+    else alert('Senha incorreta.');
+  };
+  if (relock) relock.onclick = () => setInterno(false);
+  setInterno(internoUnlocked());   // restaura o estado da sessão
 }
 
 /* ── tema / modal ────────────────────────────────────────────────────────── */
@@ -1783,6 +1823,128 @@ function answerStats(leads, key) {
   return [...m.entries()].map(([v, e]) => ({ v, ...e, tx: pct(e.q, e.n) })).sort((a, b) => b.n - a.n);
 }
 
+/* ── uso interno Trilha: cadeado ──────────────────────────────────────────────
+   Trava COSMÉTICA — o objetivo é esconder do cliente casual, não é segurança:
+   o dash é HTML estático, então quem abrir o código-fonte lê tudo. A senha
+   vive numa constante só, aqui embaixo; trocá-la é editar esta linha. */
+const INTERNO_PW  = '#Trilh@082';   // ← senha do bloco interno; troque aqui
+const INTERNO_KEY = 'ibr-interno';
+function internoUnlocked() { try { return sessionStorage.getItem(INTERNO_KEY) === '1'; } catch (e) { return false; } }
+function setInterno(on) {
+  try { on ? sessionStorage.setItem(INTERNO_KEY, '1') : sessionStorage.removeItem(INTERNO_KEY); } catch (e) {}
+  const lock = $('#interno-lock'), body = $('#interno-body');
+  if (lock) lock.hidden = on;
+  if (body) body.hidden = !on;
+  if (on && LAST_CORE) campanhaFunilInterno(LAST_CORE);
+  // Ao travar, tira a tabela do DOM — não fica legível para quem inspeciona.
+  if (!on) { const t = $('#interno-camp'), n = $('#interno-camp-note'); if (t) t.innerHTML = ''; if (n) n.innerHTML = ''; }
+}
+
+/* Funil comercial por campanha, Google + Meta na mesma tabela, com subtotal por
+   plataforma. Reaproveita a atribuição de campanha do resto do dash:
+   - Gasto      → verba da campanha na janela (Meta por campanha, Google idem)
+   - Opo        → reuniões AGENDADAS dos leads da campanha
+   - Reuniões   → reuniões REALIZADAS dos leads da campanha
+   - Propostas  → cards do Closer com proposta (enviada, fup, verde ou dados)
+   - Em aberto  → propostas ainda em negociação (não ganhas nem perdidas)
+   - Vendas     → cards do Closer ganhos, pela data de fechamento
+   - Custo/prop → Gasto ÷ Propostas   · Prop→venda → Vendas ÷ Propostas */
+function campanhaFunilInterno(c) {
+  const camps = new Map();
+  const cel = k => {
+    if (!camps.has(k)) camps.set(k, { k, leads: 0, agend: 0, realiz: 0, prop: 0, aberto: 0, vend: 0, meta: 0, gads: 0, hint: null });
+    return camps.get(k);
+  };
+  c.ent.forEach(l => {
+    const e = cel(campanhaDoLead(l));
+    e.leads++;
+    if (l.reuniao_agendada)  e.agend++;
+    if (l.reuniao_realizada) e.realiz++;
+    if (l.canal === 'Meta Ads') e.meta++; else if (l.canal === 'Google Ads') e.gads++;
+  });
+  // Propostas é CUMULATIVA: o flag/estágio de proposta some quando o card ganha
+  // ou perde, então a proposta enviada só sobrevive na tag. União de três
+  // sinais — estágio aberto, ganho, ou tag 'proposta enviada' — reconstrói quem
+  // já recebeu proposta. Tudo no mesmo coorte (card do Closer criado na janela)
+  // para que Propostas ⊇ Em aberto e ⊇ Vendas, e a taxa nunca estoure 100%.
+  const temPropTag = l => (l.tags || []).includes('proposta enviada');
+  c.clo.forEach(l => {
+    const ganho  = l.status === S.WON || l.venda;
+    const aberto = PROPOSTA_STAGES.includes(l.status);
+    if (!(aberto || ganho || temPropTag(l))) return;
+    const e = cel(campanhaDoLead(l));
+    e.prop++;
+    if (aberto) e.aberto++;
+    if (ganho)  e.vend++;
+  });
+  // Campanha que só gastou (sem lead na janela) precisa aparecer — é o caso caro.
+  for (const k of Object.keys((M && M.campaign) || {}))
+    if (spendIn(M.campaign, c.w, k) > 0) cel(k).hint = 'Meta Ads';
+  for (const nome of Object.keys((G && G.campaign) || {}))
+    if (spendIn({ x: G.campaign[nome] }, c.w, 'x') > 0) cel(rotuloCampanhaUTM(nome)).hint = 'Google Ads';
+
+  const rows = [...camps.values()].filter(e => e.k !== SEM_CAMPANHA).map(e => {
+    const ehMeta   = e.leads ? e.meta * 2 >= e.leads : e.hint === 'Meta Ads';
+    const ehGoogle = !ehMeta && (e.leads ? e.gads * 2 >= e.leads : e.hint === 'Google Ads');
+    const canal    = ehMeta ? 'Meta Ads' : ehGoogle ? 'Google Ads' : '';
+    const spend    = ehMeta ? spendIn(M && M.campaign, c.w, e.k) : ehGoogle ? spendGoogleCampanha(e.k, c.w) : 0;
+    const st       = ehMeta ? (M && M.campaign_status && M.campaign_status[e.k]) : ehGoogle ? statusGoogle(e.k) : null;
+    return Object.assign({}, e, { canal, spend, st });
+  }).filter(r => r.spend > 0 || r.prop > 0 || r.vend > 0 || r.leads >= 5);
+
+  const NC = 9;
+  const linha = r =>
+    `<tr><td><b>${esc(r.k)}</b>${statusTagMeta(r.st)}</td>` +
+    `<td class="num">${r.spend ? brl(r.spend) : '—'}</td>` +
+    `<td class="num">${int(r.agend)}</td>` +
+    `<td class="num">${int(r.realiz)}</td>` +
+    `<td class="num"><b>${int(r.prop)}</b></td>` +
+    `<td class="num">${int(r.aberto)}</td>` +
+    `<td class="num">${r.vend ? `<b>${int(r.vend)}</b>` : '0'}</td>` +
+    `<td class="num">${r.spend && r.prop ? brl(r.spend / r.prop) : '—'}</td>` +
+    `<td class="num">${r.prop ? pctS(r.vend, r.prop) : '—'}</td></tr>`;
+  const sec = (titulo, list) => {
+    if (!list.length) return '';
+    list.sort((a, b) => b.prop - a.prop || b.spend - a.spend || b.leads - a.leads);
+    const s = list.reduce((a, r) => { a.spend += r.spend; a.agend += r.agend; a.realiz += r.realiz;
+      a.prop += r.prop; a.aberto += r.aberto; a.vend += r.vend; return a; },
+      { spend: 0, agend: 0, realiz: 0, prop: 0, aberto: 0, vend: 0 });
+    return `<tr class="secrow"><td colspan="${NC}">${esc(titulo)}</td></tr>` +
+      list.map(linha).join('') +
+      `<tr class="subrow"><td>Subtotal ${esc(titulo)}</td>` +
+      `<td class="num">${brl(s.spend)}</td><td class="num">${int(s.agend)}</td>` +
+      `<td class="num">${int(s.realiz)}</td><td class="num">${int(s.prop)}</td>` +
+      `<td class="num">${int(s.aberto)}</td><td class="num">${int(s.vend)}</td>` +
+      `<td class="num">${s.prop ? brl(s.spend / s.prop) : '—'}</td>` +
+      `<td class="num">${s.prop ? pctS(s.vend, s.prop) : '—'}</td></tr>`;
+  };
+
+  const google = rows.filter(r => r.canal === 'Google Ads');
+  const meta   = rows.filter(r => r.canal === 'Meta Ads');
+  const outros = rows.filter(r => r.canal === '');
+  const cols = [{ t: 'Campanha' }, { t: 'Gasto', num: 1 }, { t: 'Opo', num: 1 }, { t: 'Reuniões', num: 1 },
+                { t: 'Propostas', num: 1 }, { t: 'Em aberto', num: 1 }, { t: 'Vendas', num: 1 },
+                { t: 'Custo/prop.', num: 1 }, { t: 'Prop→venda', num: 1 }];
+  const thead = '<thead><tr>' + cols.map(c => `<th${c.num ? ' class="num"' : ''}>${esc(c.t)}</th>`).join('') + '</tr></thead>';
+  const tot = [...google, ...meta, ...outros].reduce((a, r) => { a.spend += r.spend; a.agend += r.agend;
+    a.realiz += r.realiz; a.prop += r.prop; a.aberto += r.aberto; a.vend += r.vend; return a; },
+    { spend: 0, agend: 0, realiz: 0, prop: 0, aberto: 0, vend: 0 });
+  const body = (google.length || meta.length || outros.length)
+    ? '<tbody>' + sec('Google', google) + sec('Meta', meta) + sec('Outros', outros) + '</tbody>' +
+      `<tfoot><tr><td>Total</td><td class="num">${brl(tot.spend)}</td><td class="num">${int(tot.agend)}</td>` +
+      `<td class="num">${int(tot.realiz)}</td><td class="num">${int(tot.prop)}</td><td class="num">${int(tot.aberto)}</td>` +
+      `<td class="num">${int(tot.vend)}</td><td class="num">${tot.prop ? brl(tot.spend / tot.prop) : '—'}</td>` +
+      `<td class="num">${tot.prop ? pctS(tot.vend, tot.prop) : '—'}</td></tr></tfoot>`
+    : `<tbody><tr><td colspan="${NC}"><div class="empty">sem dados no período</div></td></tr></tbody>`;
+  $('#interno-camp').innerHTML = thead + body;
+
+  $('#interno-camp-note').innerHTML = '<div class="note">' +
+    'Funil por campanha, atribuído pela campanha do lead que entrou na janela. ' +
+    '<b>Opo</b> = reuniões agendadas · <b>Reuniões</b> = realizadas · <b>Propostas</b> = cards do Closer com proposta (enviada, follow-up, sinal verde ou dados) · ' +
+    '<b>Em aberto</b> = propostas ainda em negociação (fora as ganhas e perdidas) · <b>Custo/prop.</b> = gasto ÷ propostas · <b>Prop→venda</b> = vendas ÷ propostas. ' +
+    'Propostas e vendas contam pelo card do Closer, que costuma nascer semanas depois da entrada do lead — por isso, em janela curta, elas podem não bater com as reuniões da mesma linha. Bloco de uso interno Trilha.</div>';
+}
+
 function renderPerfil(c) {
   const base = c.ent;
   const comBot = base.filter(l => BOT_FIELDS.some(f => l[f.key]));
@@ -1916,6 +2078,10 @@ function renderPerfil(c) {
       ? `No período, <b>${esc(melhor.k)}</b> qualifica ${melhor.taxa.toFixed(0)}% contra ${pior.taxa.toFixed(0)}% de <b>${esc(pior.k)}</b>. `
       : '') +
     `A ordem é por taxa, mas só entre as campanhas com <b>${MIN_TAXA}+ leads</b> na janela — abaixo disso a taxa vira ruído (um lead qualificado já marca 100%), então elas descem para o fim junto com as que só gastaram. O investimento do <b>Meta</b> e do <b>Google</b> vem por campanha nas duas APIs; o Google não separa gasto por público nem por anúncio, e é por isso que ele aparece aqui e não na tabela abaixo. Em janelas longas, parte do gasto é anterior ao rastreio de lead — aí o CPL infla.</div>`;
+
+  // Bloco de uso interno Trilha — o funil por campanha só é montado no DOM
+  // quando a seção está destravada, para não ficar legível ao cliente casual.
+  if (internoUnlocked()) campanhaFunilInterno(c);
 
   /* Sinais preditivos — cada resposta é comparada com a média de quem
      respondeu AQUELA pergunta, não com a média geral. Quem responde o bot já
