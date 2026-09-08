@@ -960,7 +960,11 @@ function table(el, cols, rows, foot, groups) {
   const body = rows.length
     ? '<tbody>' + rows.map(r => '<tr>' + r.map((c, i) => `<td${cols[i] && cols[i].num ? ' class="num"' : ''}>${c}</td>`).join('') + '</tr>').join('') + '</tbody>'
     : `<tbody><tr><td colspan="${cols.length}"><div class="empty">sem dados no período</div></td></tr></tbody>`;
-  const tf = foot ? '<tfoot><tr>' + foot.map((c, i) => `<td${cols[i] && cols[i].num ? ' class="num"' : ''}>${c}</td>`).join('') + '</tr></tfoot>' : '';
+  // foot aceita uma linha (array de células) ou várias (array de arrays de células).
+  const footRows = foot ? (Array.isArray(foot[0]) ? foot : [foot]) : [];
+  const tf = footRows.length
+    ? '<tfoot>' + footRows.map(fr => '<tr>' + fr.map((c, i) => `<td${cols[i] && cols[i].num ? ' class="num"' : ''}>${c}</td>`).join('') + '</tr>').join('') + '</tfoot>'
+    : '';
   el.innerHTML = head + body + tf;
 }
 
@@ -1284,11 +1288,19 @@ function economiaCanal(c) {
     x.inv && x.rec ? `<b>${(x.rec / x.inv).toFixed(1).replace('.', ',')}x</b>` : '—'
   ];
 
-  // O rodapé é Meta + Google, não a soma das linhas — ver o comentário do bloco.
-  const pago = linhas.filter(x => SPEND_CANAL[x.k]).reduce((t, x) => ({
+  // Dois rodapés: 'Mídia paga' soma só Meta+Google (numerador e denominador do
+  // mesmo conjunto → CPL/CAC honestos); 'Total geral' soma TODOS os canais, pra
+  // o total representar o todo (as entradas sem canal — 'Não rastreado', bot,
+  // orgânico — entram no volume, mas ficam sem custo por não terem gasto medido).
+  const somaCanais = filtro => linhas.filter(filtro).reduce((t, x) => ({
     inv: t.inv + x.inv, n: t.n + x.n, q: t.q + x.q,
     o: t.o + x.o, v: t.v + x.v, rec: t.rec + x.rec
   }), { inv: 0, n: 0, q: 0, o: 0, v: 0, rec: 0 });
+  const pago  = somaCanais(x => SPEND_CANAL[x.k]);
+  const geral = somaCanais(() => true);
+  const geralRow = ['<b>Total geral</b>', kbrl(geral.inv), `<b>${int(geral.n)}</b>`, '—',
+                    int(geral.q), '—', int(geral.o), '—', int(geral.v), '—',
+                    geral.rec ? kbrl(geral.rec) : '—', '—'];
 
   table($('#diag-econ'),
     [{ t: 'Canal' }, { t: 'Investimento', num: 1 },
@@ -1298,7 +1310,7 @@ function economiaCanal(c) {
      { t: 'Vendas', num: 1 }, { t: 'CAC', num: 1 },
      { t: 'Receita', num: 1 }, { t: 'ROAS', num: 1 }],
     linhas.map(x => [canalCel(x.k)].concat(cels(x))),
-    ['<b>Mídia paga</b>'].concat(cels(Object.assign({ k: '' }, pago))),
+    [['<b>Mídia paga</b>'].concat(cels(Object.assign({ k: '' }, pago))), geralRow],
     [{ t: '', span: 1 }, { t: 'Verba', span: 1 }, { t: 'Lead', span: 2 },
      { t: 'Qualificado', span: 2 }, { t: 'Oportunidade', span: 2 },
      { t: 'Venda', span: 2 }, { t: 'Retorno', span: 2 }]);
