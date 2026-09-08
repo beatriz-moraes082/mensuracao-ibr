@@ -558,13 +558,18 @@ def main():
     processed_rd_sdr    = [process_lead(l, contacts_map) for l in leads_rd_sdr]
     processed_rd_closer = [process_lead(l, contacts_map) for l in leads_rd_closer]
 
-    # Dedup do SDR por telefone (mesma pessoa reentrando pelo anúncio)
+    # Dedup do SDR por telefone POR MÊS (régua canônica Trilha, set/2026): a mesma
+    # pessoa conta 1x em cada mês em que entra — quem se cadastrou em julho e voltou
+    # em agosto é uma entrada de julho E uma de agosto. Antes o dedup era global
+    # (pessoa 1x na vida), o que subcontava as reentradas mês a mês e não batia com
+    # o relatório. Dedup agora por (telefone, mês).
     seen_phones, deduped_sdr = set(), []
     for l in processed_sdr:
         p = l.get("_phone_key", "")
         if p and len(p) >= 10:
-            if p in seen_phones: continue
-            seen_phones.add(p)
+            key = (p, l.get("month", ""))
+            if key in seen_phones: continue
+            seen_phones.add(key)
         deduped_sdr.append(l)
 
     # Leads de campanha (aba principal): mídia paga no SDR + os movidos p/ Nutrição

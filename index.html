@@ -1080,6 +1080,16 @@ async function boot() {
     if (l.dkey) jaVistos.add(l.dkey);
     K.entrada.push(l);
   }
+  // Entrada direta no Closer: o time de vendas às vezes cria o card já no Closer,
+  // sem passar pelo SDR (lead que veio por outro caminho). Como o dkey desses
+  // nunca apareceu no SDR/Nutrição, contam como entrada nova. Quem tem card no
+  // SDR (promoção) é pulado pelo jaVistos — não dupla-conta. Alinha com a régua
+  // canônica do relatório (set/2026).
+  for (const l of K.closer) {
+    if (l.dkey && jaVistos.has(l.dkey)) continue;
+    if (l.dkey) jaVistos.add(l.dkey);
+    K.entrada.push(l);
+  }
   // Primeiro card de cada pessoa na entrada, indexado pelo dkey (hash do
   // telefone). É o que permite ao ciclo de vendas contar desde a chegada do
   // lead: o card do Closer nasce no avanço, então medir por ele daria zero dia
