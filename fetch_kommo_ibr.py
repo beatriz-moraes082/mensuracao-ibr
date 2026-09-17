@@ -103,6 +103,17 @@ CF_OBSERVACAO   = 1132546
 CF_ORIGEM   = 1123794   # Origem  (Meta+Ads / google / hablla.io / unknown ...)
 CF_CAMPANHA = 1123796   # Campanha (slug — às vezes público, às vezes campanha)
 CF_ANUNCIO  = 1123798   # Anúncio (criativo)
+# Respostas do bot no contato. Desde 06/09/2026 o salesbot grava aqui e deixa
+# vazios os campos equivalentes do lead (o score do lead segue preenchido).
+# Mesmas opções do lead, só que multiselect.
+CF_C_SCORE        = 1138180
+CF_C_INVESTIMENTO = 1138172
+CF_C_FREQ_VIAGEM  = 1138174
+CF_C_HOSPEDAGEM   = 1138176
+CF_C_MELHORAR     = 1138178
+CF_C_CEP          = 1138188
+CF_C_PROFISSAO    = 1138190
+CF_C_IDADE        = 1138192
 
 # Tags (lowercase) que indicam reunião — mesma convenção do IMR
 TAGS_REUNIAO = {"reunião-agendada", "reunião-realizada", "reagendar-reunião"}
@@ -404,6 +415,13 @@ def process_lead(lead, contacts_map):
     camp_raw   = contact.get(CF_CAMPANHA, "")
     anun_raw   = contact.get(CF_ANUNCIO, "")
 
+    # O lead vem primeiro: antes de 06/09 os dois lados eram gravados e, quando
+    # divergem, o do lead é o que o SDR corrigiu. O contato cobre os leads que o
+    # bot passou a deixar em branco. Contato com mais de um lead guarda só a
+    # última resposta, mas o lead mais antigo quase sempre já tem a dele.
+    def bot(cf_lead, cf_contato, nome):
+        return get_lead_cf(lead, cf_lead, nome) or contact.get(cf_contato, "")
+
     tags = get_lead_tags(lead)
     qualified, reuniao_agendada, reuniao_realizada, proposta, venda = classify(
         pipeline, status, tags, closed_in_period)
@@ -422,7 +440,7 @@ def process_lead(lead, contacts_map):
         "pipeline":    pipeline,
         "loss_reason_id": lead.get("loss_reason_id") or 0,
         "price":       lead.get("price", 0) or 0,
-        "score":       get_lead_cf(lead, CF_SCORE, "Lead score"),
+        "score":       bot(CF_SCORE, CF_C_SCORE, "Lead score"),
         # Atribuição
         "origem":      origem_raw,
         "canal":       normalize_canal(origem_raw),
@@ -437,15 +455,15 @@ def process_lead(lead, contacts_map):
         "ekey":        ekey,
         "_phone_key":  phone_hash,   # só em memória — removido antes de salvar
         "tags":        tags,
-        # Bot de pré-atendimento (campos do lead)
-        "hospedagem":   get_lead_cf(lead, CF_HOSPEDAGEM,   "Tipo de hospedagem"),
-        "freq_viagem":  get_lead_cf(lead, CF_FREQ_VIAGEM,  "Frequência de viagens"),
-        "investimento": get_lead_cf(lead, CF_INVESTIMENTO, "Investimento em férias"),
-        "melhorar":     get_lead_cf(lead, CF_MELHORAR,     "Se pudesse melhorar"),
+        # Bot de pré-atendimento (lead; contato quando o lead está vazio)
+        "hospedagem":   bot(CF_HOSPEDAGEM,   CF_C_HOSPEDAGEM,   "Tipo de hospedagem"),
+        "freq_viagem":  bot(CF_FREQ_VIAGEM,  CF_C_FREQ_VIAGEM,  "Frequência de viagens"),
+        "investimento": bot(CF_INVESTIMENTO, CF_C_INVESTIMENTO, "Investimento em férias"),
+        "melhorar":     bot(CF_MELHORAR,     CF_C_MELHORAR,     "Se pudesse melhorar"),
         # Perfil declarado
-        "idade":       get_lead_cf(lead, CF_IDADE,     "Idade"),
-        "profissao":   get_lead_cf(lead, CF_PROFISSAO, "Profissão"),
-        "cep":         get_lead_cf(lead, CF_CEP,       "CEP"),
+        "idade":       bot(CF_IDADE,     CF_C_IDADE,     "Idade"),
+        "profissao":   bot(CF_PROFISSAO, CF_C_PROFISSAO, "Profissão"),
+        "cep":         bot(CF_CEP,       CF_C_CEP,       "CEP"),
         # Qualificação do Closer (preenchida na reunião)
         "sdr":            get_lead_cf(lead, CF_SDR,          "SDR"),
         "closer":         get_lead_cf(lead, CF_CLOSER,       "Closer"),
