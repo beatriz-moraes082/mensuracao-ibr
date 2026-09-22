@@ -37,6 +37,15 @@ jobs:
 
       - run: pip install requests
 
+      # Roda ANTES da coleta: corrige as tags no Kommo para que o dash já leia
+      # o estado certo. É a fonte das quatro tags do funil SDR — o salesbot não
+      # consegue decidir sozinho (ver o cabeçalho do script).
+      - name: Corrige as tags do SDR
+        env:
+          KOMMO_SUBDOMAIN: ipiocabeachresidence
+          KOMMO_TOKEN: ${{ secrets.KOMMO_TOKEN }}
+        run: python3 rotina_tags_ibr.py --dias 30 --executar
+
       # Subdomínio e ad account não são segredo: já saem publicados dentro dos
       # próprios JSON do dash. Só os tokens vêm de secrets.
       - name: Coleta Kommo

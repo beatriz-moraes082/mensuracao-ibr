@@ -27,6 +27,7 @@ push. Se uma coleta falhar, nada é publicado e o dash continua mostrando os
 | [`fetch_kommo_ibr.py`](./fetch_kommo_ibr.py) | Leads dos funis SDR, Closer e Nutrição, tarefas e status |
 | [`fetch_meta_spend.py`](./fetch_meta_spend.py) | Gasto do Meta por adset e por criativo, dia a dia |
 | [`fetch_google_spend.py`](./fetch_google_spend.py) | Gasto do Google por campanha, dia a dia |
+| [`rotina_tags_ibr.py`](./rotina_tags_ibr.py) | Reclassifica as tags do SDR (`bot-*` e `Interagiu`) pelo que de fato aconteceu |
 | [`ibr_normalize.py`](./ibr_normalize.py) | Normaliza canal, público e criativo a partir das UTMs |
 | [`sobe_secrets.py`](./sobe_secrets.py) | Envia credenciais do `.env` para os secrets do GitHub |
 | [`google_oauth_setup.py`](./google_oauth_setup.py) | Gera o `refresh_token` do Google Ads |
