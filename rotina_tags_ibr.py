@@ -214,9 +214,12 @@ def estado_do_bot(lead):
 
     if cf_lead.get(IDADE_LEAD) or cf_cont.get(IDADE_CONTATO):
         return TAG_CONCLUIDO
-    respondeu_campo = (any(cf_lead.get(f) for f in CAMPOS_LEAD)
-                       or any(cf_cont.get(f) for f in CAMPOS_CONTATO))
-    if recebidas.get(lead["id"]) or respondeu_campo:
+    # "Respondeu o bot" = respondeu PERGUNTA do bot, não mandou mensagem solta.
+    # Um lead que escreve "oi" e não responde nada segue como não-iniciado —
+    # régua fechada com o time em 23/09/2026, igual à do IMR (fix_bot_tags.py).
+    respondeu_pergunta = (any(cf_lead.get(f) for f in CAMPOS_LEAD)
+                          or any(cf_cont.get(f) for f in CAMPOS_CONTATO))
+    if respondeu_pergunta:
         return TAG_INCOMPLETO
     return TAG_NAO_INICIADO
 
