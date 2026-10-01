@@ -425,6 +425,9 @@ thead tr.grp th:empty{background:var(--surface)}
         <div class="card span12"><div class="ch"><div><h3>Funil por Lead Score</h3><div class="sub">O score do Kommo prevê reunião e venda?</div></div></div>
           <div class="tblwrap" style="border:none;box-shadow:none"><table id="perfil-score"></table></div>
           <div id="perfil-score-insight"></div></div>
+        <div class="card span12"><div class="ch"><div><h3>Funil por qualificação de lead</h3><div class="sub">Os leads que entraram no período, por Lead Score, do agendamento à venda</div></div><span class="cap" id="perfil-qf-cap"></span></div>
+          <div class="tblwrap" style="border:none;box-shadow:none"><table id="perfil-qfunil"></table></div>
+          <div id="perfil-qfunil-note"></div></div>
         <div class="card span12"><div class="ch"><div><h3>Respostas do pré-atendimento</h3><div class="sub" id="perfil-bot-sub">Distribuição das respostas e taxa de qualificação de cada uma</div></div></div>
           <div class="grid" id="perfil-bot" style="gap:14px"></div></div>
         <div class="card span12"><div class="ch"><div><h3>Campanhas por qualificação</h3><div class="sub">Qual campanha traz lead que qualifica — Meta e Google na mesma régua, da melhor taxa para a pior</div></div></div>
@@ -1967,6 +1970,54 @@ function campanhaFunilInterno(c) {
     'Propostas e vendas contam pelo card do Closer, que costuma nascer semanas depois da entrada do lead — por isso, em janela curta, elas podem não bater com as reuniões da mesma linha. Bloco de uso interno Trilha.</div>';
 }
 
+/* Funil por qualificação — SAFRA: os leads que entraram na janela, abertos por
+   Lead Score, e o que cada grupo virou até hoje. Diferente dos KPIs do topo,
+   que contam reunião pela data em que aconteceu e venda pela data de
+   fechamento: aqui tudo é do lead, para as taxas de cada linha fecharem.
+   - Agendamento → tag de reunião, agenda (K.meetings) com o lead, ou realizada
+   - Reunião     → realizada (status 142 do SDR ou tag)
+   - Venda       → card do Closer ganho com o mesmo dkey, em qualquer data
+   - Eficiência  → vendas ÷ reuniões
+   - Aproveit.   → vendas de quem teve reunião realizada ÷ reuniões */
+function funilQualificacao(c) {
+  const ganhou = vendasDkeys();
+  const agenda = new Set((K.meetings || []).map(t => t.k));
+  const grupos = [...SCORES, 'Revisar', ''];
+  const rows = grupos.map(s => ({ s, n: 0, ag: 0, re: 0, v: 0, vr: 0 }));
+  const idx = new Map(grupos.map((s, i) => [s, i]));
+  c.ent.forEach(l => {
+    const r = rows[idx.has(l.score) ? idx.get(l.score) : grupos.length - 1];
+    const v = !!(l.dkey && ganhou.has(l.dkey));
+    r.n++;
+    if (l.reuniao_agendada || l.reuniao_realizada || (l.dkey && agenda.has(l.dkey))) r.ag++;
+    if (l.reuniao_realizada) r.re++;
+    if (v) r.v++;
+    if (v && l.reuniao_realizada) r.vr++;
+  });
+  const tot = rows.reduce((a, r) => { for (const k of ['n', 'ag', 're', 'v', 'vr']) a[k] += r[k]; return a; },
+                          { n: 0, ag: 0, re: 0, v: 0, vr: 0 });
+  const p = (a, b) => `<span style="color:var(--mut)">${pctS(a, b, 1)}</span>`;
+  const g = (a, b) => b && a ? `<b style="color:var(--good)">${pctS(a, b, 2)}</b>` : pctS(a, b, 2);
+  const linha = (rot, r) => [rot, `<b>${int(r.n)}</b>`, p(r.n, tot.n), `<b>${int(r.ag)}</b>`, p(r.ag, r.n),
+    `<b>${int(r.re)}</b>`, p(r.re, r.n), p(r.re, r.ag), r.v ? `<b style="color:var(--good)">${int(r.v)}</b>` : '0',
+    `<b>${pctS(r.v, r.n, 2)}</b>`, g(r.v, r.re), g(r.vr, r.re)];
+  const rotulo = s => s === '' ? '<span class="tag">Sem qualificação</span>'
+    : s === 'Revisar' ? '<span class="tag" title="Combinação de respostas que a régua não cobre">Revisar</span>'
+    : `<span class="tag score-${s}">${s}</span>`;
+  $('#perfil-qf-cap').textContent = c.w.label;
+  table($('#perfil-qfunil'),
+    [{ t: 'Qualificação' }, { t: 'Leads', num: 1 }, { t: '% Total', num: 1 }, { t: 'Agendamentos', num: 1 },
+     { t: '% Ag', num: 1 }, { t: 'Reuniões', num: 1 }, { t: '% Re', num: 1 }, { t: '% Ag → Re', num: 1 },
+     { t: 'Vendas', num: 1 }, { t: '% Conv.', num: 1 }, { t: 'Eficiência', num: 1 }, { t: 'Aproveit.', num: 1 }],
+    rows.filter(r => r.n).map(r => linha(rotulo(r.s), r)),
+    tot.n ? linha('Total', tot) : null);
+  $('#perfil-qfunil-note').innerHTML = '<div class="note">' +
+    'Leitura por <b>safra</b>: só os leads que entraram no período, e o que cada um virou até hoje — por isso agendamentos, reuniões e vendas aqui não batem com os KPIs do topo, que contam reunião pela data em que aconteceu e venda pela data de fechamento. ' +
+    '<b>% Ag</b>, <b>% Re</b> e <b>% Conv.</b> são sobre os leads da linha · <b>% Ag → Re</b> = reuniões ÷ agendamentos · ' +
+    '<b>Eficiência</b> = vendas ÷ reuniões · <b>Aproveit.</b> = vendas de quem teve reunião realizada ÷ reuniões. ' +
+    'Em janela recente as vendas ainda estão amadurecendo: o card do Closer costuma fechar semanas depois da entrada.</div>';
+}
+
 function renderPerfil(c) {
   const base = c.ent;
   const comBot = base.filter(l => BOT_FIELDS.some(f => l[f.key]));
@@ -2005,6 +2056,8 @@ function renderPerfil(c) {
     (vendComScore.length >= 5
       ? ` Das <b>${int(vendComScore.length)}</b> vendas com score no período, <b>${int(vendAB)}</b> vieram de A/B e <b>${int(vendComScore.length - vendAB)}</b> de C/D/E: o score não prevê quem fecha.`
       : '') + '</div></div>';
+
+  funilQualificacao(c);
 
   /* respostas do bot */
   const txBase = pct(base.filter(l => l.qualified).length, base.length);
