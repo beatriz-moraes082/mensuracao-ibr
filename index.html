@@ -9,7 +9,7 @@
 :root{
  --plane:#f6f3ec; --surface:#ffffff; --ink:#1c1a17; --ink2:#5f5b53; --mut:#a29d91; --line:#e8e3d8; --line2:#f0ece3;
  --accent:#ff4a24; --accent-2:#0f7d86; --bar:#3d3931; --track:#f0ece2; --tint:#fdf1ec; --tile:#332f28;
- --good:#0f7d86; --warn:#c8811a; --bad:#c73a1d;
+ --good:#0f7d86; --warn:#c8811a; --bad:#c73a1d; --win:#2f8f4e;
  --shadow:0 1px 2px rgba(28,26,23,.04),0 10px 26px -18px rgba(28,26,23,.20);
  --shadow-h:0 2px 6px rgba(28,26,23,.05),0 18px 38px -22px rgba(28,26,23,.26);
  --r:14px; --r-sm:11px; --r-xs:8px;
@@ -20,14 +20,14 @@
 @media (prefers-color-scheme:dark){:root:where(:not([data-theme="light"])){
  --plane:#0f0f11; --surface:#191919; --ink:#f2efe7; --ink2:#b6b1a5; --mut:#7d7970; --line:#2b2b2f; --line2:#232326;
  --accent:#ff5f3a; --accent-2:#39b9c4; --bar:#c9c5ba; --track:#232327; --tint:#2a1e1a; --tile:#30303a;
- --good:#39b9c4; --warn:#e0a33f; --bad:#ff6a4d;
+ --good:#39b9c4; --warn:#e0a33f; --bad:#ff6a4d; --win:#4cc27a;
  --shadow:0 1px 2px rgba(0,0,0,.3),0 12px 30px -20px rgba(0,0,0,.6);
  --shadow-h:0 2px 8px rgba(0,0,0,.35),0 20px 42px -24px rgba(0,0,0,.7);
 }}
 :root[data-theme="dark"]{
  --plane:#0f0f11; --surface:#191919; --ink:#f2efe7; --ink2:#b6b1a5; --mut:#7d7970; --line:#2b2b2f; --line2:#232326;
  --accent:#ff5f3a; --accent-2:#39b9c4; --bar:#c9c5ba; --track:#232327; --tint:#2a1e1a; --tile:#30303a;
- --good:#39b9c4; --warn:#e0a33f; --bad:#ff6a4d;
+ --good:#39b9c4; --warn:#e0a33f; --bad:#ff6a4d; --win:#4cc27a;
  --shadow:0 1px 2px rgba(0,0,0,.3),0 12px 30px -20px rgba(0,0,0,.6);
  --shadow-h:0 2px 8px rgba(0,0,0,.35),0 20px 42px -24px rgba(0,0,0,.7);
 }
@@ -222,6 +222,27 @@ thead tr.grp th:empty{background:var(--surface)}
 .tag.score-C{background:var(--track);color:var(--ink2)}
 .tag.score-D{background:color-mix(in srgb,var(--mut) 30%,transparent);color:var(--ink2)}
 .tag.score-E{background:color-mix(in srgb,var(--mut) 18%,transparent);color:var(--mut)}
+
+/* ── funil por qualificação (aba Perfil) ────────────── */
+.qb{display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:24px;padding:0 9px;
+ border-radius:6px;font-family:var(--f-mono);font-size:11px;font-weight:700;color:#fff;white-space:nowrap}
+.qb.q-A{background:#2f8f4e} .qb.q-B{background:#0f9d8f} .qb.q-C{background:#3f74d9}
+.qb.q-D{background:#d89a1c} .qb.q-E{background:#d9562b}
+.qb.q-rev{background:#8a6fd1} .qb.q-sem{background:#5f5b53}
+#perfil-qfunil td.num{padding:6px 10px}
+#perfil-qfunil tbody td{border-bottom:1px solid var(--line2)}
+#perfil-qfunil .hc{display:inline-block;min-width:58px;padding:4px 7px;border-radius:6px;color:var(--ink);
+ background:color-mix(in srgb,var(--hc) calc(5% + var(--h) * 45%),transparent)}
+#perfil-qfunil .hc.top{font-weight:700;box-shadow:inset 0 0 0 1.5px var(--hc)}
+#perfil-qfunil .vol{display:flex;align-items:center;justify-content:flex-end;gap:7px;color:var(--mut)}
+#perfil-qfunil .vol i{display:block;width:44px;height:5px;border-radius:3px;background:var(--track);overflow:hidden}
+#perfil-qfunil .vol i::after{content:"";display:block;height:100%;width:var(--w);background:var(--bar)}
+#perfil-qfunil .zero{color:var(--mut)}
+#perfil-qfunil .won{color:var(--win);font-weight:700}
+#perfil-qfunil thead tr.grp th.g-ag{color:var(--accent-2)}
+#perfil-qfunil thead tr.grp th.g-vd{color:var(--win)}
+#perfil-qfunil .hc.off{background:transparent;color:var(--mut)}
+#perfil-qfunil tfoot .hc{background:transparent;box-shadow:none;padding-left:0;padding-right:0}
 
 /* ── perfil comportamental (radar) ──────────────────── */
 .radars{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(270px,1fr))}
@@ -954,7 +975,7 @@ function table(el, cols, rows, foot, groups) {
   // colunas). Cada grupo declara o próprio colspan; a soma tem que fechar com
   // cols.length, senão a tabela desalinha silenciosamente.
   const grp = groups
-    ? '<tr class="grp">' + groups.map(g => `<th colspan="${g.span}">${esc(g.t)}</th>`).join('') + '</tr>'
+    ? '<tr class="grp">' + groups.map(g => `<th colspan="${g.span}"${g.cls ? ` class="${g.cls}"` : ''}>${esc(g.t)}</th>`).join('') + '</tr>'
     : '';
   const head = '<thead>' + grp + '<tr>' + cols.map(c => `<th${c.num ? ' class="num"' : ''}>${esc(c.t)}</th>`).join('') + '</tr></thead>';
   const body = rows.length
@@ -1993,21 +2014,54 @@ function funilQualificacao(c) {
   });
   const tot = rows.reduce((a, r) => { for (const k of ['n', 'ag', 're', 'v', 'vr']) a[k] += r[k]; return a; },
                           { n: 0, ag: 0, re: 0, v: 0, vr: 0 });
-  const p = (a, b) => `<span style="color:var(--mut)">${pctS(a, b, 1)}</span>`;
-  const g = (a, b) => b && a ? `<b style="color:var(--good)">${pctS(a, b, 2)}</b>` : pctS(a, b, 2);
-  const linha = (rot, r) => [rot, `<b>${int(r.n)}</b>`, p(r.n, tot.n), `<b>${int(r.ag)}</b>`, p(r.ag, r.n),
-    `<b>${int(r.re)}</b>`, p(r.re, r.n), p(r.re, r.ag), r.v ? `<b style="color:var(--good)">${int(r.v)}</b>` : '0',
-    `<b>${pctS(r.v, r.n, 2)}</b>`, g(r.v, r.re), g(r.vr, r.re)];
-  const rotulo = s => s === '' ? '<span class="tag">Sem qualificação</span>'
-    : s === 'Revisar' ? '<span class="tag" title="Combinação de respostas que a régua não cobre">Revisar</span>'
-    : `<span class="tag score-${s}">${s}</span>`;
+  // Cada taxa vira uma célula com fundo proporcional ao melhor valor da coluna,
+  // e o melhor ganha contorno. Linha com menos de MIN_HEAT leads não entra na
+  // escala nem disputa o destaque: 1 venda em 3 leads não é 33%.
+  // "Sem qualificação" e "Revisar" também ficam fora: quase não agendam, e
+  // entrar na escala achataria a diferença entre A e E.
+  const MIN_HEAT = 10;
+  const vis = rows.filter(r => r.n);
+  const disputa = r => r.n >= MIN_HEAT && SCORES.includes(r.s);
+  const taxas = {
+    ag: r => pct(r.ag, r.n), re: r => pct(r.re, r.n), agre: r => pct(r.re, r.ag),
+    conv: r => pct(r.v, r.n), efi: r => pct(r.v, r.re), apr: r => pct(r.vr, r.re)
+  };
+  const maxT = {}, minT = {};
+  for (const k in taxas) {
+    const vals = vis.filter(disputa).map(taxas[k]);
+    maxT[k] = Math.max(0, ...vals); minT[k] = vals.length ? Math.min(...vals) : 0;
+  }
+  const heat = (k, r, a, b, d, cor, foot) => {
+    if (!b) return '<span class="zero">—</span>';
+    const v = taxas[k](r), conta = !foot && disputa(r) && maxT[k] > 0;
+    // Escala do pior ao melhor da coluna, não de zero: taxas parecidas
+    // (50% × 57%) ficariam com a mesma cor e a diferença sumiria.
+    const amp = maxT[k] - minT[k];
+    const h = conta ? (amp > 0 ? Math.max(0, Math.min(1, (v - minT[k]) / amp)) : 1) : 0;
+    const top = conta && v > 0 && v === maxT[k];
+    return `<span class="hc${top ? ' top' : ''}${conta ? '' : ' off'}" style="--hc:var(${cor});--h:${h.toFixed(3)}">${pctS(a, b, d)}</span>`;
+  };
+  const maxN = Math.max(1, ...vis.map(r => r.n));
+  const linha = (rot, r, foot) => [rot,
+    `<b>${int(r.n)}</b>`,
+    foot ? pctS(r.n, tot.n, 1)
+         : `<span class="vol"><i style="--w:${(100 * r.n / maxN).toFixed(1)}%"></i>${pctS(r.n, tot.n, 1)}</span>`,
+    `<b>${int(r.ag)}</b>`, heat('ag', r, r.ag, r.n, 1, '--accent-2', foot),
+    `<b>${int(r.re)}</b>`, heat('re', r, r.re, r.n, 1, '--accent-2', foot), heat('agre', r, r.re, r.ag, 1, '--accent-2', foot),
+    r.v ? `<span class="won">${int(r.v)}</span>` : '<span class="zero">0</span>',
+    heat('conv', r, r.v, r.n, 2, '--win', foot),
+    heat('efi', r, r.v, r.re, 2, '--win', foot), heat('apr', r, r.vr, r.re, 2, '--win', foot)];
+  const rotulo = s => s === '' ? '<span class="qb q-sem">Sem qualificação</span>'
+    : s === 'Revisar' ? '<span class="qb q-rev" title="Combinação de respostas que a régua não cobre">Revisar</span>'
+    : `<span class="qb q-${s}">${s}</span>`;
   $('#perfil-qf-cap').textContent = c.w.label;
   table($('#perfil-qfunil'),
     [{ t: 'Qualificação' }, { t: 'Leads', num: 1 }, { t: '% Total', num: 1 }, { t: 'Agendamentos', num: 1 },
      { t: '% Ag', num: 1 }, { t: 'Reuniões', num: 1 }, { t: '% Re', num: 1 }, { t: '% Ag → Re', num: 1 },
      { t: 'Vendas', num: 1 }, { t: '% Conv.', num: 1 }, { t: 'Eficiência', num: 1 }, { t: 'Aproveit.', num: 1 }],
-    rows.filter(r => r.n).map(r => linha(rotulo(r.s), r)),
-    tot.n ? linha('Total', tot) : null);
+    vis.map(r => linha(rotulo(r.s), r)),
+    tot.n ? linha('Total', tot, true) : null,
+    [{ t: '', span: 3 }, { t: 'Agendamento e reunião', span: 5, cls: 'g-ag' }, { t: 'Venda', span: 4, cls: 'g-vd' }]);
   $('#perfil-qfunil-note').innerHTML = '<div class="note">' +
     'Leitura por <b>safra</b>: só os leads que entraram no período, e o que cada um virou até hoje — por isso agendamentos, reuniões e vendas aqui não batem com os KPIs do topo, que contam reunião pela data em que aconteceu e venda pela data de fechamento. ' +
     '<b>% Ag</b>, <b>% Re</b> e <b>% Conv.</b> são sobre os leads da linha · <b>% Ag → Re</b> = reuniões ÷ agendamentos · ' +
