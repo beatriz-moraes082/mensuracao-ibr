@@ -422,9 +422,6 @@ thead tr.grp th:empty{background:var(--surface)}
       <div class="filterbar" data-period="perfil"></div>
       <div class="kpis" id="perfil-kpis" style="margin-top:16px"></div>
       <div class="grid" style="margin-top:14px">
-        <div class="card span12"><div class="ch"><div><h3>Funil por Lead Score</h3><div class="sub">O score do Kommo prevê reunião e venda?</div></div></div>
-          <div class="tblwrap" style="border:none;box-shadow:none"><table id="perfil-score"></table></div>
-          <div id="perfil-score-insight"></div></div>
         <div class="card span12"><div class="ch"><div><h3>Funil por qualificação de lead</h3><div class="sub">Os leads que entraram no período, por Lead Score, do agendamento à venda</div></div><span class="cap" id="perfil-qf-cap"></span></div>
           <div class="tblwrap" style="border:none;box-shadow:none"><table id="perfil-qfunil"></table></div>
           <div id="perfil-qfunil-note"></div></div>
@@ -2032,30 +2029,6 @@ function renderPerfil(c) {
     kpi('Score D ou E', int(de.length), `qualificam a ${pctS(de.filter(l => l.qualified).length, de.length)}`),
     kpi('Taxa média do período', c.txQualif.toFixed(0).replace('.', ',') + '%', 'referência de comparação', '', '')
   ].join('');
-
-  /* funil por score — o score prevê alguma coisa? */
-  const vend = c.vend;
-  const linhas = SCORES.map(s => {
-    const ls = base.filter(l => l.score === s);
-    const vs = vend.filter(l => l.score === s);
-    return { s, n: ls.length, q: ls.filter(l => l.qualified).length, r: ls.filter(l => l.reuniao_realizada).length,
-             v: vs.length, rec: vs.reduce((a, l) => a + (l.price || 0), 0) };
-  });
-  const semScore = { n: base.filter(l => !l.score).length, v: vend.filter(l => !l.score).length };
-  table($('#perfil-score'),
-    [{ t: 'Score' }, { t: 'Leads', num: 1 }, { t: 'Qualif.', num: 1 }, { t: 'Taxa qualif.', num: 1 },
-     { t: 'Reuniões', num: 1 }, { t: 'Vendas', num: 1 }, { t: 'Receita', num: 1 }],
-    linhas.filter(r => r.n || r.v).map(r =>
-      [`<span class="tag score-${r.s}">${r.s}</span>`, int(r.n), int(r.q), `<b>${pctS(r.q, r.n)}</b>`, int(r.r), int(r.v), r.rec ? kbrl(r.rec) : '—'])
-      .concat(semScore.n || semScore.v ? [['<span class="tag">sem score</span>', int(semScore.n), '—', '—', '—', int(semScore.v), '—']] : []));
-
-  const vendComScore = vend.filter(l => l.score);
-  const vendAB = vendComScore.filter(l => l.score === 'A' || l.score === 'B').length;
-  $('#perfil-score-insight').innerHTML =
-    `<div class="warn"><span class="wi">✦</span><div>O Lead Score é preenchido <b>durante</b> a qualificação, então ler a coluna "taxa de qualificação" por score é parcialmente circular — quem recebeu score já estava sendo trabalhado. A coluna que importa é a de <b>vendas</b>.` +
-    (vendComScore.length >= 5
-      ? ` Das <b>${int(vendComScore.length)}</b> vendas com score no período, <b>${int(vendAB)}</b> vieram de A/B e <b>${int(vendComScore.length - vendAB)}</b> de C/D/E: o score não prevê quem fecha.`
-      : '') + '</div></div>';
 
   funilQualificacao(c);
 
